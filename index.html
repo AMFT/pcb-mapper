@@ -96,6 +96,55 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
 .prop-row label { font-size: 10px; color: #888; min-width: 50px; }
 .prop-row input[type=range] { flex: 1; }
 .prop-row .prop-val { font-size: 10px; color: #aaa; min-width: 30px; text-align: right; }
+
+/* Landing Page */
+#landing { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1a2e; z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#landing h1 { font-size: 32px; color: #e94560; margin-bottom: 4px; letter-spacing: 1px; }
+#landing .subtitle { color: #666; font-size: 13px; margin-bottom: 32px; }
+#landing .actions { display: flex; gap: 16px; margin-bottom: 32px; }
+#landing .actions button { padding: 14px 28px; border-radius: 8px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; font-size: 14px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 140px; }
+#landing .actions button:hover { border-color: #e94560; background: #1a3a6e; }
+#landing .actions button .icon { font-size: 28px; }
+#landing .actions button .label { font-size: 12px; color: #888; }
+#landing .recent { width: 400px; max-width: 90vw; }
+#landing .recent h3 { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+#landing .recent-list { list-style: none; max-height: 240px; overflow-y: auto; }
+#landing .recent-list li { padding: 10px 12px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: all 0.12s; }
+#landing .recent-list li:hover { border-color: #e94560; background: #1a3a6e; }
+#landing .recent-list .board-name { font-size: 13px; font-weight: bold; }
+#landing .recent-list .board-meta { font-size: 10px; color: #666; }
+#landing .recent-list .board-del { color: #e94560; font-size: 16px; opacity: 0; cursor: pointer; padding: 2px 6px; }
+#landing .recent-list li:hover .board-del { opacity: 0.7; }
+#landing .recent-list .board-del:hover { opacity: 1; }
+
+/* New Board Modal */
+#new-board-modal { display: none; }
+#new-board-modal .modal { min-width: 320px; }
+#new-board-modal label { display: block; font-size: 11px; color: #888; margin-top: 8px; }
+#new-board-modal input { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 6px 10px; font-size: 13px; margin-top: 2px; }
+.dim-row { display: flex; gap: 8px; }
+.dim-row input { flex: 1; }
+
+/* Tutorial Toast */
+#tutorial-toast { display: none; position: fixed; bottom: 20px; right: 20px; width: 360px; max-height: 80vh; background: #16213e; border: 1px solid #0f3460; border-radius: 10px; z-index: 250; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden; animation: toastSlide 0.3s ease-out; }
+@keyframes toastSlide { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+#tutorial-toast .toast-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #0f3460; }
+#tutorial-toast .toast-header h3 { font-size: 14px; color: #e94560; }
+#tutorial-toast .toast-close { background: none; border: none; color: #888; font-size: 18px; cursor: pointer; }
+#tutorial-toast .toast-body { padding: 12px 16px; overflow-y: auto; max-height: 60vh; }
+#tutorial-toast .step { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-start; }
+#tutorial-toast .step-num { background: #e94560; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; flex-shrink: 0; }
+#tutorial-toast .step-text { font-size: 12px; line-height: 1.5; }
+#tutorial-toast .step-text kbd { background: #0f3460; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #e94560; }
+#tutorial-toast .shortcuts { margin-top: 8px; border-top: 1px solid #0f3460; padding-top: 10px; }
+#tutorial-toast .shortcuts h4 { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+#tutorial-toast .sc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; font-size: 11px; }
+#tutorial-toast .sc-grid kbd { background: #0f3460; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #e94560; margin-right: 4px; }
+
+/* Auto-save indicator */
+#autosave-badge { position: fixed; bottom: 6px; left: 72px; font-size: 10px; color: #444; z-index: 5; transition: color 0.3s; }
+#autosave-badge.saving { color: #e94560; }
+#autosave-badge.saved { color: #44cc44; }
 </style>
 </head>
 <body>
@@ -192,6 +241,79 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
 </div>
 
 <div id="ctx-menu"></div>
+<div id="autosave-badge">●</div>
+
+<!-- Landing Page -->
+<div id="landing">
+  <h1>⊹ PCB Mapper</h1>
+  <div class="subtitle">Reverse Engineering Tool</div>
+  <div class="actions">
+    <button onclick="app.showNewBoard()">
+      <span class="icon">＋</span>
+      New Board
+      <span class="label">Start a new project</span>
+    </button>
+    <button onclick="el('landing-load').click()">
+      <span class="icon">📂</span>
+      Open File
+      <span class="label">.pcbm or .json</span>
+    </button>
+    <input type="file" id="landing-load" accept=".json,.zip,.pcbm" style="display:none">
+  </div>
+  <div class="recent" id="recent-boards">
+    <h3>Recent Boards</h3>
+    <ul class="recent-list" id="recent-list"></ul>
+  </div>
+</div>
+
+<!-- New Board Modal -->
+<div class="modal-overlay" id="new-board-modal">
+  <div class="modal">
+    <h3>New Board</h3>
+    <label>Board Name</label>
+    <input id="nb-name" placeholder="e.g. VMM3 Controller, PSU Rev2">
+    <label>Board Width (mm)</label>
+    <div class="dim-row">
+      <input id="nb-width" type="number" placeholder="Width" min="1" max="999" step="0.1">
+      <input id="nb-height" type="number" placeholder="Height" min="1" max="999" step="0.1">
+    </div>
+    <label style="color:#555;font-size:10px;margin-top:2px">Measure your board with a ruler. Used for Gerber export scaling.</label>
+    <div class="mbtn">
+      <button onclick="app.cancelNewBoard()">Cancel</button>
+      <button class="primary" onclick="app.confirmNewBoard()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tutorial Toast -->
+<div id="tutorial-toast">
+  <div class="toast-header">
+    <h3>🐾 Getting Started</h3>
+    <button class="toast-close" onclick="app.closeTutorial()">✕</button>
+  </div>
+  <div class="toast-body">
+    <div class="step"><div class="step-num">1</div><div class="step-text">Load board photos using <strong>📷 Top</strong> / <strong>📷 Bottom</strong> buttons</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">Place <strong>alignment points</strong> (<kbd>A</kbd>) on matching features on both sides, then hit <strong>📐 Align</strong></div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">Draw the <strong>board outline</strong> (<kbd>O</kbd>) — click corners, press <kbd>Enter</kbd> to finish</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">Add <strong>components</strong> (<kbd>C</kbd>) — drag to draw outline, then click to place each pin</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-text">Place <strong>markers</strong> (<kbd>M</kbd>) for vias and through-holes</div></div>
+    <div class="step"><div class="step-num">6</div><div class="step-text">Draw <strong>traces</strong> (<kbd>T</kbd>) between points, press <kbd>Enter</kbd> to finish each trace</div></div>
+    <div class="step"><div class="step-num">7</div><div class="step-text">Add <strong>pours</strong> (<kbd>P</kbd>) for ground/power planes, use <strong>punchout</strong> (<kbd>U</kbd>) for clearances</div></div>
+    <div class="step"><div class="step-num">8</div><div class="step-text">Export with <strong>⚡ Gerber</strong> or view in <strong>🧊 3D</strong></div></div>
+    <div class="shortcuts">
+      <h4>Keyboard Shortcuts</h4>
+      <div class="sc-grid">
+        <div><kbd>V</kbd> Select</div><div><kbd>H</kbd> Pan</div>
+        <div><kbd>M</kbd> Marker</div><div><kbd>C</kbd> Component</div>
+        <div><kbd>T</kbd> Trace</div><div><kbd>P</kbd> Pour</div>
+        <div><kbd>N</kbd> Net</div><div><kbd>O</kbd> Outline</div>
+        <div><kbd>A</kbd> Align</div><div><kbd>U</kbd> Punchout</div>
+        <div><kbd>Enter</kbd> Finish</div><div><kbd>Del</kbd> Delete</div>
+        <div><kbd>Ctrl+Z</kbd> Undo</div><div><kbd>Ctrl+Y</kbd> Redo</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- 3D Viewer -->
 <div id="viewer3d">
@@ -260,7 +382,7 @@ class PCBMapper {
     this.layer = 'top';
     this.topImg = null; this.botImg = null;
     this.zoom = 1;
-    this.data = { components:[], markers:[], nets:[], traces:[], pours:[], alignPoints:{top:[],bottom:[]}, outline:[], idCounter:1 };
+    this.data = { components:[], markers:[], nets:[], traces:[], pours:[], alignPoints:{top:[],bottom:[]}, outline:[], idCounter:1, boardName:'', boardWidth:0, boardHeight:0 };
     this.undoStack = []; this.redoStack = [];
     this.netStart = null;
     this.drawPts = []; this.drawPreview = null;
@@ -270,13 +392,184 @@ class PCBMapper {
     this.isPanning = false; this.panX = 0; this.panY = 0;
     // Pin placement mode
     this.pinPlace = null; // { compId, label, pinCount, placed }
-    this.init();
+    this._autoSaveTimer = null;
+    this._boardKey = null; // localStorage key for current board
+    this.showLanding();
     this.updateResistorInputs();
   }
 
   genId() { return 'o' + (this.data.idCounter++); }
 
-  init() {
+  // ===== LANDING PAGE & BOARD MANAGEMENT =====
+  showLanding() {
+    el('landing').style.display = 'flex';
+    this.refreshRecentList();
+    // Wire up the landing file loader
+    el('landing-load').addEventListener('change', e => {
+      el('landing').style.display = 'none';
+      this.initCanvas();
+      this.loadProject(e);
+    });
+  }
+
+  refreshRecentList() {
+    const list = el('recent-list');
+    const boards = this.getSavedBoards();
+    if (!boards.length) {
+      list.innerHTML = '<li style="color:#555;cursor:default;border-color:transparent">No recent boards</li>';
+      return;
+    }
+    list.innerHTML = boards.map(b => `
+      <li onclick="app.openSavedBoard('${b.key}')">
+        <div>
+          <div class="board-name">${b.name || 'Untitled Board'}</div>
+          <div class="board-meta">${b.dims ? b.dims + 'mm' : 'No dimensions'} · ${b.components} parts · ${b.date}</div>
+        </div>
+        <span class="board-del" onclick="event.stopPropagation(); app.deleteSavedBoard('${b.key}')" title="Delete">✕</span>
+      </li>
+    `).join('');
+  }
+
+  getSavedBoards() {
+    const boards = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.startsWith('pcbm_')) continue;
+      try {
+        const raw = JSON.parse(localStorage.getItem(key));
+        boards.push({
+          key,
+          name: raw.boardName || key.replace('pcbm_',''),
+          dims: (raw.boardWidth && raw.boardHeight) ? `${raw.boardWidth}×${raw.boardHeight}` : '',
+          components: (raw.components||[]).length,
+          markers: (raw.markers||[]).length,
+          date: raw._savedAt ? new Date(raw._savedAt).toLocaleDateString() : '—',
+          ts: raw._savedAt || 0,
+        });
+      } catch(e) {}
+    }
+    return boards.sort((a,b) => b.ts - a.ts);
+  }
+
+  showNewBoard() {
+    el('new-board-modal').style.display = 'flex';
+    el('nb-name').value = '';
+    el('nb-width').value = '';
+    el('nb-height').value = '';
+    setTimeout(() => el('nb-name').focus(), 100);
+  }
+
+  cancelNewBoard() { el('new-board-modal').style.display = 'none'; }
+
+  confirmNewBoard() {
+    const name = el('nb-name').value.trim() || 'Untitled Board';
+    const w = parseFloat(el('nb-width').value) || 0;
+    const h = parseFloat(el('nb-height').value) || 0;
+    el('new-board-modal').style.display = 'none';
+    el('landing').style.display = 'none';
+
+    this.data.boardName = name;
+    this.data.boardWidth = w;
+    this.data.boardHeight = h;
+    this._boardKey = 'pcbm_' + name.replace(/[^a-zA-Z0-9]/g,'_').toLowerCase() + '_' + Date.now();
+    this.initCanvas();
+    this.showTutorial();
+    this.autoSave();
+    this.status(`Board "${name}" created` + (w && h ? ` (${w}×${h}mm)` : ''));
+  }
+
+  openSavedBoard(key) {
+    el('landing').style.display = 'none';
+    this._boardKey = key;
+    try {
+      const raw = JSON.parse(localStorage.getItem(key));
+      this.initCanvas();
+      // Restore board images from localStorage if present
+      const topImgData = localStorage.getItem(key + '_topImg');
+      const botImgData = localStorage.getItem(key + '_botImg');
+      if (topImgData) {
+        fabric.Image.fromURL(topImgData, (img) => {
+          img.set({left:0,top:0,selectable:false,evented:false,opacity:0.85});
+          img.pcb = {t:'img',side:'top'};
+          this.topImg = img;
+          this.canvas.add(img); this.canvas.sendToBack(img);
+          if (this.botImg) this.canvas.sendToBack(this.botImg);
+          this.updateLayers();
+          // Fit view
+          const z = Math.min(this.canvas.width/img.width, this.canvas.height/img.height)*0.85;
+          this.canvas.setZoom(z); this.zoom=z; el('zoom-display').textContent=Math.round(z*100)+'%';
+        });
+      }
+      if (botImgData) {
+        fabric.Image.fromURL(botImgData, (img) => {
+          img.set({left:0,top:0,selectable:false,evented:false,opacity:0.85});
+          img.pcb = {t:'img',side:'bottom'};
+          this.botImg = img;
+          this.canvas.add(img); this.canvas.sendToBack(img);
+          this.updateLayers();
+        });
+      }
+      this.importJSON(raw);
+      this.status(`Opened "${raw.boardName || 'board'}"`);
+    } catch(e) { alert('Failed to load board: ' + e.message); }
+  }
+
+  deleteSavedBoard(key) {
+    if (!confirm('Delete this board?')) return;
+    localStorage.removeItem(key);
+    localStorage.removeItem(key + '_topImg');
+    localStorage.removeItem(key + '_botImg');
+    this.refreshRecentList();
+  }
+
+  showTutorial() { el('tutorial-toast').style.display = 'block'; }
+  closeTutorial() { el('tutorial-toast').style.display = 'none'; }
+
+  // ===== AUTO-SAVE =====
+  autoSave() {
+    if (!this._boardKey) return;
+    clearTimeout(this._autoSaveTimer);
+    this._autoSaveTimer = setTimeout(() => this._doAutoSave(), 2000);
+  }
+
+  _doAutoSave() {
+    if (!this._boardKey) return;
+    const badge = el('autosave-badge');
+    badge.className = 'saving'; badge.textContent = '● Saving...';
+    try {
+      this.syncPositions();
+      const saveData = { ...this.data, _savedAt: Date.now() };
+      localStorage.setItem(this._boardKey, JSON.stringify(saveData));
+      // Save board images separately (they're big)
+      if (this.topImg) {
+        const src = this.topImg.getSrc?.();
+        if (src?.startsWith('data:')) {
+          try { localStorage.setItem(this._boardKey + '_topImg', src); } catch(e) { /* quota exceeded — skip images */ }
+        }
+      }
+      if (this.botImg) {
+        const src = this.botImg.getSrc?.();
+        if (src?.startsWith('data:')) {
+          try { localStorage.setItem(this._boardKey + '_botImg', src); } catch(e) {} }
+      }
+      badge.className = 'saved'; badge.textContent = '● Saved';
+      setTimeout(() => { badge.className = ''; badge.textContent = '●'; }, 3000);
+    } catch(e) {
+      badge.className = ''; badge.textContent = '● Save failed';
+      console.warn('Auto-save failed:', e);
+    }
+  }
+
+  // Trigger auto-save after mutations
+  pushUndo() {
+    this.undoStack.push(JSON.stringify(this.data));
+    if (this.undoStack.length > 50) this.undoStack.shift();
+    this.redoStack = [];
+    this.autoSave();
+  }
+
+  initCanvas() {
+    if (this.canvas) return; // Already initialized
     const wrap = el('canvas-wrap');
     this.canvas = new fabric.Canvas('board-canvas', {
       width: wrap.clientWidth, height: wrap.clientHeight,
@@ -500,7 +793,6 @@ class PCBMapper {
   }
 
   // ===== UNDO =====
-  pushUndo() { this.undoStack.push(JSON.stringify(this.data)); if (this.undoStack.length > 50) this.undoStack.shift(); this.redoStack = []; }
   undo() { if (!this.undoStack.length) return; this.redoStack.push(JSON.stringify(this.data)); this.restore(this.undoStack.pop()); }
   redo() { if (!this.redoStack.length) return; this.undoStack.push(JSON.stringify(this.data)); this.restore(this.redoStack.pop()); }
 
@@ -1075,6 +1367,7 @@ class PCBMapper {
         this.updateLayers();
         const z = Math.min(this.canvas.width/img.width, this.canvas.height/img.height) * 0.85;
         if (!this.topImg || !this.botImg || side === 'top') { this.canvas.setZoom(z); this.zoom=z; el('zoom-display').textContent = Math.round(z*100)+'%'; }
+        this.autoSave();
       });
     };
     reader.readAsDataURL(f);
@@ -1500,6 +1793,11 @@ class PCBMapper {
 
   loadProject(ev) {
     const f = ev.target.files[0]; if (!f) return;
+    el('landing').style.display = 'none';
+    this.initCanvas();
+    // Set board key from filename
+    const baseName = f.name.replace(/\.(pcbm|json|zip)$/i, '').replace(/[^a-zA-Z0-9]/g,'_').toLowerCase();
+    if (!this._boardKey) this._boardKey = 'pcbm_' + baseName + '_' + Date.now();
     if (f.name.endsWith('.json')) {
       const reader = new FileReader();
       reader.onload = (e) => { try { this.importJSON(JSON.parse(e.target.result)); this.status('Loaded (JSON)'); } catch(err) { alert('Error: '+err.message); } };
@@ -1550,8 +1848,12 @@ class PCBMapper {
       alignPoints: raw.alignPoints||{top:[],bottom:[]},
       outline: raw.outline||[],
       idCounter: raw.idCounter||1,
+      boardName: raw.boardName || this.data.boardName || '',
+      boardWidth: raw.boardWidth || this.data.boardWidth || 0,
+      boardHeight: raw.boardHeight || this.data.boardHeight || 0,
     };
     this.rebuild();
+    this.autoSave();
   }
 
   exportMD() {
@@ -1949,9 +2251,15 @@ class PCBMapper {
     }
     const bwPx = bx2 - bx1, bhPx = by2 - by1;
 
-    // Ask user for physical board width
-    const boardWidthMM = parseFloat(prompt(`Board width in mm?\n(Pixel width: ${Math.round(bwPx)}px)\n\nEnter actual board width for accurate Gerber output:`, '100'));
-    if (!boardWidthMM || isNaN(boardWidthMM)) { this.status('Export cancelled'); return; }
+    // Use stored dimensions or prompt
+    let boardWidthMM = this.data.boardWidth;
+    if (!boardWidthMM) {
+      boardWidthMM = parseFloat(prompt(`Board width in mm?\n(Pixel width: ${Math.round(bwPx)}px)\n\nEnter actual board width for accurate Gerber output:`, '100'));
+      if (!boardWidthMM || isNaN(boardWidthMM)) { this.status('Export cancelled'); return; }
+      this.data.boardWidth = boardWidthMM;
+      this.data.boardHeight = Math.round(bhPx * (boardWidthMM / bwPx) * 10) / 10;
+      this.autoSave();
+    }
     const px2mm = boardWidthMM / bwPx;
     const boardHeightMM = bhPx * px2mm;
 
