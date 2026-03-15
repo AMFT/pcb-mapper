@@ -168,6 +168,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
 
 <div id="canvas-wrap">
   <div id="topbar">
+    <button onclick="app.goHome()" title="Save & return to home" style="color:#e94560">← Home</button>
     <button onclick="el('img-top').click()">📷 Top</button>
     <button onclick="el('img-bot').click()">📷 Bottom</button>
     <input type="file" id="img-top" accept="image/*" style="display:none">
@@ -402,14 +403,47 @@ class PCBMapper {
 
   // ===== LANDING PAGE & BOARD MANAGEMENT =====
   showLanding() {
+    // Check if there's an active board to auto-resume
+    const activeKey = localStorage.getItem('pcbm_active');
+    if (activeKey && localStorage.getItem(activeKey)) {
+      this.openSavedBoard(activeKey);
+      return;
+    }
     el('landing').style.display = 'flex';
     this.refreshRecentList();
-    // Wire up the landing file loader
-    el('landing-load').addEventListener('change', e => {
-      el('landing').style.display = 'none';
-      this.initCanvas();
-      this.loadProject(e);
-    });
+    // Wire up the landing file loader (only once)
+    if (!this._landingWired) {
+      this._landingWired = true;
+      el('landing-load').addEventListener('change', e => {
+        el('landing').style.display = 'none';
+        this.initCanvas();
+        this.loadProject(e);
+      });
+    }
+  }
+
+  goHome() {
+    // Save current board, clear active, show landing
+    this._doAutoSave();
+    localStorage.removeItem('pcbm_active');
+    this._boardKey = null;
+    // Clear canvas
+    if (this.canvas) {
+      this.canvas.clear();
+      this.canvas.backgroundColor = '#0d1117';
+    }
+    this.topImg = null; this.botImg = null;
+    this.resetData();
+    el('landing').style.display = 'flex';
+    this.refreshRecentList();
+  }
+
+  resetData() {
+    this.data = { components:[], markers:[], nets:[], traces:[], pours:[], alignPoints:{top:[],bottom:[]}, outline:[], idCounter:1, boardName:'', boardWidth:0, boardHeight:0 };
+    this.undoStack = []; this.redoStack = [];
+    this.netStart = null; this.drawPts = []; this.drawPreview = null;
+    this.pendingPourPts = null; this.punchTarget = null;
+    this.pinPlace = null;
   }
 
   refreshRecentList() {
@@ -468,11 +502,17 @@ class PCBMapper {
     el('new-board-modal').style.display = 'none';
     el('landing').style.display = 'none';
 
+    // Reset everything for a clean board
+    this.resetData();
+    this.initCanvas();
+    if (this.canvas) { this.canvas.clear(); this.canvas.backgroundColor = '#0d1117'; }
+    this.topImg = null; this.botImg = null;
+
     this.data.boardName = name;
     this.data.boardWidth = w;
     this.data.boardHeight = h;
     this._boardKey = 'pcbm_' + name.replace(/[^a-zA-Z0-9]/g,'_').toLowerCase() + '_' + Date.now();
-    this.initCanvas();
+    localStorage.setItem('pcbm_active', this._boardKey);
     this.showTutorial();
     this.autoSave();
     this.status(`Board "${name}" created` + (w && h ? ` (${w}×${h}mm)` : ''));
@@ -481,6 +521,8 @@ class PCBMapper {
   openSavedBoard(key) {
     el('landing').style.display = 'none';
     this._boardKey = key;
+    localStorage.setItem('pcbm_active', key);
+    this.resetData();
     try {
       const raw = JSON.parse(localStorage.getItem(key));
       this.initCanvas();
@@ -1798,6 +1840,7 @@ class PCBMapper {
     // Set board key from filename
     const baseName = f.name.replace(/\.(pcbm|json|zip)$/i, '').replace(/[^a-zA-Z0-9]/g,'_').toLowerCase();
     if (!this._boardKey) this._boardKey = 'pcbm_' + baseName + '_' + Date.now();
+    localStorage.setItem('pcbm_active', this._boardKey);
     if (f.name.endsWith('.json')) {
       const reader = new FileReader();
       reader.onload = (e) => { try { this.importJSON(JSON.parse(e.target.result)); this.status('Loaded (JSON)'); } catch(err) { alert('Error: '+err.message); } };
@@ -2044,41 +2087,41 @@ class PCBMapper {
     const capMat = new THREE.MeshPhongMaterial({ color: 0x333366 });
     const resMat = new THREE.MeshPhongMaterial({ color: 0xc4a67a });
 
-    // Traces (copper strips on top)
+    // Traces (copper strips — top and bottom)
     (this.data.traces || []).forEach(t => {
       if (!t.points || t.points.length < 2) return;
       const w = (t.width || 3) * 0.8;
-      const yPos = boardThickness/2 + copperThick/2;
+      const isBottom = (t.layer === 'bottom');
+      const yPos = isBottom ? -(boardThickness/2 + copperThick/2) : (boardThickness/2 + copperThick/2);
+      const mat = isBottom ? copperDarkMat : copperMat;
       for (let i = 0; i < t.points.length - 1; i++) {
         const p1 = t.points[i], p2 = t.points[i+1];
         const dx = p2.x-p1.x, dy = p2.y-p1.y;
         const len = Math.hypot(dx, dy);
         if (len < 0.1) continue;
-        // Trace segment
         const geo = new THREE.BoxGeometry(len + w, copperThick, w);
-        const mesh = new THREE.Mesh(geo, copperMat);
+        const mesh = new THREE.Mesh(geo, mat);
         const mx = (p1.x+p2.x)/2 - cx, my = (p1.y+p2.y)/2 - cy;
         mesh.position.set(mx, yPos, -my);
         mesh.rotation.y = Math.atan2(dy, dx);
         scene.add(mesh);
       }
-      // Joint dots at each point
       t.points.forEach(p => {
         const dotGeo = new THREE.CylinderGeometry(w/2, w/2, copperThick, 8);
-        const dot = new THREE.Mesh(dotGeo, copperMat);
+        const dot = new THREE.Mesh(dotGeo, mat);
         dot.position.set(p.x - cx, yPos, -(p.y - cy));
         scene.add(dot);
       });
     });
 
-    // Pours (copper planes)
+    // Pours (copper planes — top and bottom)
     (this.data.pours || []).forEach(p => {
       if (!p.points || p.points.length < 3) return;
+      const isBottom = (p.layer === 'bottom');
       const shape = new THREE.Shape();
       shape.moveTo(p.points[0].x - cx, p.points[0].y - cy);
       for (let i = 1; i < p.points.length; i++) shape.lineTo(p.points[i].x - cx, p.points[i].y - cy);
       shape.closePath();
-      // Add holes
       (p.cutouts || []).forEach(c => {
         if (c.points.length < 3) return;
         const hole = new THREE.Path();
@@ -2089,9 +2132,9 @@ class PCBMapper {
         shape.holes.push(hole);
       });
       const geo = new THREE.ExtrudeGeometry(shape, { depth: copperThick, bevelEnabled: false });
-      const mesh = new THREE.Mesh(geo, copperDarkMat);
+      const mesh = new THREE.Mesh(geo, isBottom ? copperMat : copperDarkMat);
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.y = boardThickness / 2;
+      mesh.position.y = isBottom ? -(boardThickness/2 + copperThick) : boardThickness/2;
       scene.add(mesh);
     });
 
@@ -2122,12 +2165,13 @@ class PCBMapper {
       scene.add(pad);
     });
 
-    // Components (3D bodies)
+    // Components (3D bodies — top and bottom)
     this.data.components.forEach(c => {
       if (!c.bounds) return;
       const b = c.bounds;
       const w = b.x2-b.x1, h = b.y2-b.y1;
       const mx = (b.x1+b.x2)/2 - cx, my = (b.y1+b.y2)/2 - cy;
+      const isBottom = (c.layer === 'bottom');
 
       let bodyH, mat;
       switch(c.compType) {
@@ -2139,10 +2183,11 @@ class PCBMapper {
 
       const geo = new THREE.BoxGeometry(w, bodyH, h);
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(mx, boardThickness/2 + bodyH/2, -my);
+      const compY = isBottom ? -(boardThickness/2 + bodyH/2) : (boardThickness/2 + bodyH/2);
+      mesh.position.set(mx, compY, -my);
       scene.add(mesh);
 
-      // Label on top (using a small plane with canvas texture)
+      // Label
       const canvas2d = document.createElement('canvas');
       canvas2d.width = 256; canvas2d.height = 64;
       const ctx = canvas2d.getContext('2d');
@@ -2154,8 +2199,9 @@ class PCBMapper {
       const labelGeo = new THREE.PlaneGeometry(w * 0.8, h * 0.3);
       const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
       const labelMesh = new THREE.Mesh(labelGeo, labelMat);
-      labelMesh.rotation.x = -Math.PI / 2;
-      labelMesh.position.set(mx, boardThickness/2 + bodyH + 0.5, -my);
+      labelMesh.rotation.x = isBottom ? Math.PI / 2 : -Math.PI / 2;
+      const labelY = isBottom ? -(boardThickness/2 + bodyH + 0.5) : (boardThickness/2 + bodyH + 0.5);
+      labelMesh.position.set(mx, labelY, -my);
       scene.add(labelMesh);
     });
 
