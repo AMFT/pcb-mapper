@@ -860,9 +860,10 @@ class PCBMapper {
   }
 
   addSMD(x, y, d) {
-    const id = d?.id || this.genId(), label = d?.label || 'SMD' + id.replace('o','');
-    const r = new fabric.Rect({ left:x, top:y, width:14, height:8, fill:'#00ccaa', stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', rx:2, ry:2, selectable:this.tool==='select', hasControls:false });
-    r.pcb = { id, t:'smd', label, layer:this.layer, x, y };
+    const id = d?.id || this.genId(), label = d?.label || 'P' + id.replace('o','');
+    const pw = d?.padWidth || 14, ph = d?.padHeight || 8;
+    const r = new fabric.Rect({ left:x, top:y, width:pw, height:ph, fill:'#00ccaa', stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', rx:2, ry:2, selectable:this.tool==='select', hasControls:false });
+    r.pcb = { id, t:'smd', label, layer:this.layer, x, y, padWidth:pw, padHeight:ph };
     const tx = new fabric.Text(label, { left:x+12, top:y-6, fontSize:10, fill:'#00ccaa', fontFamily:'monospace', selectable:false, evented:false });
     tx.pcb = { lf: id };
     r.on('moving', () => { tx.set({left:r.left+12,top:r.top-6}); r.pcb.x=r.left; r.pcb.y=r.top; this.updateNets(id); });
@@ -1507,6 +1508,11 @@ class PCBMapper {
     if (d.holeSize !== undefined) {
       h += `<div class="prop-row"><label>Hole Size</label><input type="range" min="1" max="20" value="${d.holeSize}" oninput="app.setHoleSize('${d.id}',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${d.holeSize}px</span></div>`;
     }
+    if (d.t === 'smd') {
+      const pw = d.padWidth || 14, ph = d.padHeight || 8;
+      h += `<div class="prop-row"><label>Pad W</label><input type="range" min="4" max="60" value="${pw}" oninput="app.setPadSize('${d.id}','w',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${pw}px</span></div>`;
+      h += `<div class="prop-row"><label>Pad H</label><input type="range" min="4" max="60" value="${ph}" oninput="app.setPadSize('${d.id}','h',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${ph}px</span></div>`;
+    }
     if (d.t === 'trace') {
       const w = d.width || 3;
       h += `<div class="prop-row"><label>Width</label><input type="range" min="1" max="20" value="${w}" oninput="app.setTraceWidth('${d.id}',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${w}px</span></div>`;
@@ -1664,6 +1670,18 @@ class PCBMapper {
     const md = this.data.markers.find(m => m.id === id);
     if (md) md.holeSize = v;
     this.canvas.requestRenderAll();
+  }
+
+  setPadSize(id, dim, val) {
+    const v = parseInt(val);
+    const obj = this.findObj(id);
+    if (!obj) return;
+    if (dim === 'w') { obj.pcb.padWidth = v; obj.set('width', v); }
+    else { obj.pcb.padHeight = v; obj.set('height', v); }
+    const md = this.data.markers.find(m => m.id === id);
+    if (md) { if (dim === 'w') md.padWidth = v; else md.padHeight = v; }
+    this.canvas.requestRenderAll();
+    this.autoSave();
   }
 
   setTraceWidth(id, val) {
