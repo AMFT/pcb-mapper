@@ -325,6 +325,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
 <!-- 3D Viewer -->
 <div id="viewer3d">
   <button id="v3d-close" onclick="app.close3D()">✕ Close</button>
+  <div id="v3d-views" style="position:fixed;top:12px;left:16px;z-index:201;display:flex;gap:6px">
+    <button onclick="app.set3DView('top')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">⬆ Top</button>
+    <button onclick="app.set3DView('bottom')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">⬇ Bottom</button>
+    <button onclick="app.set3DView('front')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">◻ Front</button>
+    <button onclick="app.set3DView('iso')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">◇ Iso</button>
+  </div>
   <div id="v3d-info">Drag to rotate • Scroll to zoom • Right-drag to pan</div>
 </div>
 
@@ -2236,17 +2242,72 @@ class PCBMapper {
 
     // Orbit controls (manual implementation since we don't have OrbitControls)
     let isDragging = false, isRightDrag = false, lastX = 0, lastY = 0;
-    let theta = Math.PI * 0.3, phi = Math.PI * 0.25, dist = maxDim * 1.0;
-    let panX = 0, panZ = 0;
+    this._3dOrbit = { theta: Math.PI * 0.3, phi: Math.PI * 0.25, dist: maxDim * 1.0, panX: 0, panZ: 0 };
+    const orb = this._3dOrbit;
 
-    const updateCam = () => {
+    this._3dUpdateCam = () => {
       camera.position.set(
-        panX + dist * Math.sin(theta) * Math.cos(phi),
-        dist * Math.sin(phi),
-        panZ + dist * Math.cos(theta) * Math.cos(phi)
+        orb.panX + orb.dist * Math.sin(orb.theta) * Math.cos(orb.phi),
+        orb.dist * Math.sin(orb.phi),
+        orb.panZ + orb.dist * Math.cos(orb.theta) * Math.cos(orb.phi)
       );
-      camera.lookAt(panX, 0, panZ);
+      camera.lookAt(orb.panX, 0, orb.panZ);
+      // Update compass
+      if (compassCam) {
+        compassCam.position.copy(camera.position).sub(new THREE.Vector3(panX, 0, panZ)).normalize().multiplyScalar(4);
+        compassCam.lookAt(0, 0, 0);
+        compassRenderer.render(compassScene, compassCam);
+      }
     };
+
+    // XYZ Compass (corner gizmo)
+    const compassDiv = document.createElement('div');
+    compassDiv.style.cssText = 'position:fixed;bottom:16px;left:16px;width:100px;height:100px;z-index:201;pointer-events:none;';
+    el('viewer3d').appendChild(compassDiv);
+    const compassRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    compassRenderer.setSize(100, 100);
+    compassRenderer.setClearColor(0x000000, 0);
+    compassDiv.appendChild(compassRenderer.domElement);
+    const compassScene = new THREE.Scene();
+    const compassCam = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    // Axis lines
+    const axLen = 1.5;
+    const axes = [
+      { dir: [axLen,0,0], color: 0xff4444, label: 'X' },
+      { dir: [0,axLen,0], color: 0x44ff44, label: 'Y' },
+      { dir: [0,0,axLen], color: 0x4488ff, label: 'Z' },
+    ];
+    axes.forEach(a => {
+      const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(...a.dir)]);
+      const mat = new THREE.LineBasicMaterial({ color: a.color, linewidth: 2 });
+      compassScene.add(new THREE.Line(geo, mat));
+      // Cone arrowhead
+      const coneGeo = new THREE.ConeGeometry(0.12, 0.3, 8);
+      const coneMat = new THREE.MeshBasicMaterial({ color: a.color });
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      cone.position.set(...a.dir);
+      if (a.label === 'X') cone.rotation.z = -Math.PI/2;
+      else if (a.label === 'Z') cone.rotation.x = Math.PI/2;
+      compassScene.add(cone);
+      // Label sprite
+      const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64;
+      const ctx2 = c2.getContext('2d');
+      ctx2.fillStyle = '#' + a.color.toString(16).padStart(6, '0');
+      ctx2.font = 'bold 48px monospace'; ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+      ctx2.fillText(a.label, 32, 32);
+      const tex = new THREE.CanvasTexture(c2);
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, sizeAttenuation: false });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(0.15, 0.15, 1);
+      const offset = 0.4;
+      sprite.position.set(a.dir[0]+a.dir[0]/axLen*offset, a.dir[1]+a.dir[1]/axLen*offset, a.dir[2]+a.dir[2]/axLen*offset);
+      compassScene.add(sprite);
+    });
+    // Center dot
+    const dotG = new THREE.SphereGeometry(0.08, 8, 8);
+    compassScene.add(new THREE.Mesh(dotG, new THREE.MeshBasicMaterial({ color: 0xaaaaaa })));
+
+    const updateCam = () => this._3dUpdateCam();
     updateCam();
 
     renderer.domElement.addEventListener('mousedown', (e) => {
@@ -2260,11 +2321,11 @@ class PCBMapper {
       if (!isDragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       if (isRightDrag) {
-        panX -= dx * dist * 0.001;
-        panZ -= dy * dist * 0.001;
+        orb.panX -= dx * orb.dist * 0.001;
+        orb.panZ -= dy * orb.dist * 0.001;
       } else {
-        theta -= dx * 0.005;
-        phi = Math.max(0.05, Math.min(Math.PI * 0.49, phi + dy * 0.005));
+        orb.theta -= dx * 0.005;
+        orb.phi = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, orb.phi + dy * 0.005));
       }
       lastX = e.clientX; lastY = e.clientY;
       updateCam();
@@ -2272,8 +2333,8 @@ class PCBMapper {
     renderer.domElement.addEventListener('mouseup', () => isDragging = false);
     renderer.domElement.addEventListener('wheel', (e) => {
       e.preventDefault();
-      dist *= e.deltaY > 0 ? 1.1 : 0.9;
-      dist = Math.max(maxDim * 0.1, Math.min(maxDim * 5, dist));
+      orb.dist *= e.deltaY > 0 ? 1.1 : 0.9;
+      orb.dist = Math.max(maxDim * 0.1, Math.min(maxDim * 5, orb.dist));
       updateCam();
     });
 
@@ -2556,16 +2617,33 @@ class PCBMapper {
     this.status(`Exported Gerber (${(blob.size/1024).toFixed(0)}KB)`);
   }
 
+  set3DView(view) {
+    if (!this._3dOrbit || !this._3dUpdateCam) return;
+    const o = this._3dOrbit;
+    switch(view) {
+      case 'top': o.theta = 0; o.phi = Math.PI * 0.44; break;
+      case 'bottom': o.theta = 0; o.phi = -Math.PI * 0.44; break;
+      case 'front': o.theta = 0; o.phi = 0; break;
+      case 'iso': o.theta = Math.PI * 0.3; o.phi = Math.PI * 0.25; break;
+    }
+    this._3dUpdateCam();
+  }
+
   close3D() {
     this._3dRunning = false;
     el('viewer3d').style.display = 'none';
     if (this._3dResize) window.removeEventListener('resize', this._3dResize);
     if (this._3dRenderer) {
       const v = el('viewer3d');
+      // Remove compass div if present
+      const compass = v.querySelector('div[style*="bottom:16px"]');
+      if (compass) compass.remove();
       if (this._3dRenderer.domElement.parentNode === v) v.removeChild(this._3dRenderer.domElement);
       this._3dRenderer.dispose();
       this._3dRenderer = null;
     }
+    this._3dOrbit = null;
+    this._3dUpdateCam = null;
   }
 
   reverseResistor() {
