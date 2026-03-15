@@ -628,6 +628,7 @@ class PCBMapper {
     this.canvas = new fabric.Canvas('board-canvas', {
       width: wrap.clientWidth, height: wrap.clientHeight,
       backgroundColor: '#0d1117', selection: true, preserveObjectStacking: true, fireRightClick: true, stopContextMenu: true,
+      perPixelTargetFind: true, targetFindTolerance: 8,
     });
     this.canvas.on('mouse:down', e => this.onDown(e));
     this.canvas.on('mouse:move', e => this.onMove(e));
@@ -1723,15 +1724,40 @@ class PCBMapper {
   refreshUI() {
     el('cl-comp').innerHTML = this.data.components.map(c => {
       const pinCount = this.data.markers.filter(m => m.t === 'pin' && m.parentId === c.id).length;
-      return `<li><span>${c.label} (${c.compType}, ${pinCount}/${c.pinCount} pins)</span><span class="x" onclick="app.delById('${c.id}')">✕</span></li>`;
+      return `<li onclick="app.selectAndPan('${c.id}')" style="cursor:pointer"><span>${c.label} (${c.compType}, ${pinCount}/${c.pinCount} pins)</span><span class="x" onclick="event.stopPropagation();app.delById('${c.id}')">✕</span></li>`;
     }).join('');
-    el('cl-mark').innerHTML = this.data.markers.filter(m=>m.t!=='pin').map(m => `<li><span>${m.label}</span><span class="x" onclick="app.delById('${m.id}')">✕</span></li>`).join('');
+    el('cl-mark').innerHTML = this.data.markers.filter(m=>m.t!=='pin').map(m => `<li onclick="app.selectAndPan('${m.id}')" style="cursor:pointer"><span>${m.label}</span><span class="x" onclick="event.stopPropagation();app.delById('${m.id}')">✕</span></li>`).join('');
     el('cl-net').innerHTML = this.data.nets.map(n => {
       const f=this.data.markers.find(m=>m.id===n.fromId), t=this.data.markers.find(m=>m.id===n.toId);
       return `<li><span>${f?.label||'?'} ↔ ${t?.label||'?'}</span><span class="x" onclick="app.delById('${n.id}')">✕</span></li>`;
     }).join('');
-    el('cl-pour').innerHTML = this.data.pours.map(p => `<li><span>${p.label} (${p.netType})</span><span class="x" onclick="app.delById('${p.id}')">✕</span></li>`).join('');
-    el('cl-trace').innerHTML = (this.data.traces||[]).map(t => `<li><span>Trace (${t.points.length}pts)</span><span class="x" onclick="app.delById('${t.id}')">✕</span></li>`).join('');
+    el('cl-pour').innerHTML = this.data.pours.map(p => `<li onclick="app.selectAndPan('${p.id}')" style="cursor:pointer"><span>${p.label} (${p.netType})</span><span class="x" onclick="event.stopPropagation();app.delById('${p.id}')">✕</span></li>`).join('');
+    el('cl-trace').innerHTML = (this.data.traces||[]).map(t => `<li onclick="app.selectAndPan('${t.id}')" style="cursor:pointer"><span>Trace (${t.points.length}pts)</span><span class="x" onclick="event.stopPropagation();app.delById('${t.id}')">✕</span></li>`).join('');
+  }
+
+  selectAndPan(id) {
+    const obj = this.findObj(id);
+    if (!obj) return;
+    // Switch to select tool
+    this.setTool('select');
+    // Make sure it's selectable
+    obj.set({ selectable: true, evented: true });
+    // Select it
+    this.canvas.discardActiveObject();
+    this.canvas.setActiveObject(obj);
+    this.canvas.requestRenderAll();
+    this.showProps(obj);
+    // Pan canvas to center on the object
+    const vpt = this.canvas.viewportTransform;
+    const zoom = this.canvas.getZoom();
+    const cx = (obj.left || obj.getCenterPoint?.()?.x || 0);
+    const cy = (obj.top || obj.getCenterPoint?.()?.y || 0);
+    const canvasW = this.canvas.getWidth();
+    const canvasH = this.canvas.getHeight();
+    vpt[4] = canvasW / 2 - cx * zoom;
+    vpt[5] = canvasH / 2 - cy * zoom;
+    this.canvas.setViewportTransform(vpt);
+    this.canvas.requestRenderAll();
   }
 
   // ===== SAVE / LOAD =====
@@ -2254,7 +2280,7 @@ class PCBMapper {
       camera.lookAt(orb.panX, 0, orb.panZ);
       // Update compass
       if (compassCam) {
-        compassCam.position.copy(camera.position).sub(new THREE.Vector3(panX, 0, panZ)).normalize().multiplyScalar(4);
+        compassCam.position.copy(camera.position).sub(new THREE.Vector3(orb.panX, 0, orb.panZ)).normalize().multiplyScalar(4);
         compassCam.lookAt(0, 0, 0);
         compassRenderer.render(compassScene, compassCam);
       }
