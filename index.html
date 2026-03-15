@@ -155,7 +155,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
   <div class="tool-sep"></div>
   <button class="tool-btn" data-tool="marker"><span>⊙</span><span class="lbl">MARKER</span><span class="tip">Marker (M)</span></button>
   <button class="tool-btn" data-tool="component"><span>▣</span><span class="lbl">COMP</span><span class="tip">Component (C)</span></button>
-  <button class="tool-btn" data-tool="smd"><span>▪</span><span class="lbl">SMD</span><span class="tip">SMD Pad (S)</span></button>
+  <button class="tool-btn" data-tool="smd"><span>▪</span><span class="lbl">PAD</span><span class="tip">Surface Pad (D)</span></button>
   <div class="tool-sep"></div>
   <button class="tool-btn" data-tool="net"><span>⟋</span><span class="lbl">NET</span><span class="tip">Net (N)</span></button>
   <button class="tool-btn" data-tool="trace"><span>╱</span><span class="lbl">TRACE</span><span class="tip">Trace (T)</span></button>
@@ -238,6 +238,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
         <div id="res-reverse" style="margin-top:6px;color:#888;font-size:11px"></div>
       </div>
     </div>
+    <div class="psection" style="margin-top:12px;border-top:1px solid #0f3460;padding-top:10px">
+      <h3>SMD Code Decoder</h3>
+      <div style="margin-bottom:4px;font-size:10px;color:#555">Resistor (3/4-digit, EIA-96) or Capacitor markings</div>
+      <input id="smd-code" placeholder="e.g. 103, 4R7, 01A, 104, 2R2" style="background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:4px;padding:6px 10px;font-size:13px;width:100%" oninput="app.decodeSMD()">
+      <div id="smd-result" style="margin-top:6px;font-size:12px;color:#e0e0e0;min-height:40px"></div>
+    </div>
   </div>
 </div>
 
@@ -306,7 +312,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
       <div class="sc-grid">
         <div><kbd>V</kbd> Select</div><div><kbd>H</kbd> Pan</div>
         <div><kbd>M</kbd> Marker</div><div><kbd>C</kbd> Component</div>
-        <div><kbd>T</kbd> Trace</div><div><kbd>P</kbd> Pour</div>
+        <div><kbd>D</kbd> Pad</div><div><kbd>T</kbd> Trace</div>
         <div><kbd>N</kbd> Net</div><div><kbd>O</kbd> Outline</div>
         <div><kbd>A</kbd> Align</div><div><kbd>U</kbd> Punchout</div>
         <div><kbd>Enter</kbd> Finish</div><div><kbd>Del</kbd> Delete</div>
@@ -664,7 +670,7 @@ class PCBMapper {
     if (t !== 'net') this.netStart = null;
     if (t !== 'component') { this.compDragStart = null; if (this.compDragRect) { this.canvas.remove(this.compDragRect); this.compDragRect = null; } }
     if (t !== 'punchout') this.punchTarget = null;
-    const h = { select:'Click to select pins/markers. Right-click for options.', pan:'Drag to pan. Scroll to zoom.', marker:'Click to place. Dbl-click to rename.', component:'Drag to draw IC/component outline.', smd:'Click to place SMD pad.', net:'Click two pins/markers to connect.', trace:'Click points. Enter to finish.', pour:'Click boundary. Enter to finish.', punchout:'Click a pour, then draw cutout. Enter to finish.', outline:'Click board edge points. Enter to finish.', align:'Place alignment points. Switch layers for both sides.' };
+    const h = { select:'Click to select pins/markers. Right-click for options.', pan:'Drag to pan. Scroll to zoom.', marker:'Click to place. Dbl-click to rename.', component:'Drag to draw IC/component outline.', smd:'Click to place surface pad.', net:'Click two pins/markers to connect.', trace:'Click points. Enter to finish.', pour:'Click boundary. Enter to finish.', punchout:'Click a pour, then draw cutout. Enter to finish.', outline:'Click board edge points. Enter to finish.', align:'Place alignment points. Switch layers for both sides.' };
     this.status(h[t] || '');
   }
 
@@ -684,7 +690,7 @@ class PCBMapper {
     else if (k === 'h') this.setTool('pan');
     else if (k === 'm') this.setTool('marker');
     else if (k === 'c' && !e.ctrlKey) this.setTool('component');
-    else if (k === 's' && !e.ctrlKey) this.setTool('smd');
+    else if ((k === 'd' || k === 's') && !e.ctrlKey) this.setTool('smd');
     else if (k === 'n') this.setTool('net');
     else if (k === 't') this.setTool('trace');
     else if (k === 'p') this.setTool('pour');
@@ -2562,6 +2568,88 @@ class PCBMapper {
     for (let i = 0; i < dc; i++) colors.push(R_DIGIT_NAMES[parseInt(dStr[i])] || 'black');
     colors.push(R_MUL_NAMES[mulIdx]);
     el('res-reverse').innerHTML = colors.map(c => `<span style="display:inline-block;width:14px;height:14px;background:${R_COLORS[c].hex};border:1px solid #555;border-radius:2px;vertical-align:middle;margin:0 2px" title="${c}"></span>${c}`).join(' → ');
+  }
+
+  // ===== SMD CODE DECODER =====
+  decodeSMD() {
+    const raw = el('smd-code').value.trim();
+    if (!raw) { el('smd-result').innerHTML = ''; return; }
+    const code = raw.toUpperCase();
+    const results = [];
+
+    // EIA-96 resistor (2 digits + letter): e.g. 01A = 100Ω, 68X = 49.9kΩ
+    const EIA96_VAL = [0,100,102,105,107,110,113,115,118,121,124,127,130,133,137,140,143,147,150,154,158,162,165,169,174,178,182,187,191,196,200,205,210,215,221,226,232,237,243,249,255,261,267,274,280,287,294,301,309,316,324,332,340,348,357,365,374,383,392,402,412,422,432,442,453,464,475,487,499,511,523,536,549,562,576,590,604,619,634,649,665,681,698,715,732,750,768,787,806,825,845,866,887,909,931,953,976];
+    const EIA96_MUL = {Z:0.01,Y:0.01,R:0.01,X:0.01,A:1,B:10,C:100,D:1e3,E:1e4,F:1e5};
+    // Actually standard EIA-96 multipliers:
+    const EIA_MUL = {Z:0.001,Y:0.01,R:0.01,X:0.1,A:1,B:10,C:100,D:1000,E:10000,F:100000};
+    if (/^\d{2}[A-Z]$/.test(code)) {
+      const idx = parseInt(code.slice(0,2));
+      const letter = code[2];
+      if (idx >= 1 && idx <= 96 && EIA_MUL[letter] !== undefined) {
+        const val = EIA96_VAL[idx] * EIA_MUL[letter];
+        results.push({ type:'Resistor (EIA-96)', value: this.fmtR(val) });
+      }
+    }
+
+    // 3-digit resistor: e.g. 103 = 10kΩ, 470 = 47Ω, 4R7 = 4.7Ω
+    if (/^\d{2}\d$/.test(code) && code.length === 3) {
+      const d = parseInt(code.slice(0,2));
+      const m = parseInt(code[2]);
+      const val = d * Math.pow(10, m);
+      if (val > 0) results.push({ type:'Resistor (3-digit)', value: this.fmtR(val) });
+    }
+    // 4-digit resistor: e.g. 1001 = 1kΩ, 4703 = 470kΩ
+    if (/^\d{4}$/.test(code)) {
+      const d = parseInt(code.slice(0,3));
+      const m = parseInt(code[3]);
+      const val = d * Math.pow(10, m);
+      if (val > 0) results.push({ type:'Resistor (4-digit)', value: this.fmtR(val) });
+    }
+    // R notation: 4R7 = 4.7Ω, R47 = 0.47Ω, 47R = 47Ω
+    if (/^(\d*)R(\d+)$/.test(code) || /^(\d+)R(\d*)$/.test(code)) {
+      const val = parseFloat(code.replace('R', '.'));
+      if (!isNaN(val) && val > 0) results.push({ type:'Resistor (R notation)', value: this.fmtR(val) });
+    }
+
+    // Capacitor 3-digit: e.g. 104 = 100nF, 222 = 2.2nF, 470 = 47pF
+    if (/^\d{3}$/.test(code)) {
+      const d = parseInt(code.slice(0,2));
+      const m = parseInt(code[2]);
+      const pf = d * Math.pow(10, m);
+      if (pf > 0) results.push({ type:'Capacitor (3-digit)', value: this.fmtC(pf) });
+    }
+    // Capacitor with letter multiplier: e.g. 1n0 = 1nF, 4u7 = 4.7µF, 2p2 = 2.2pF
+    if (/^[\d.]+[pnuμ][\d]*$/i.test(raw)) {
+      const match = raw.match(/^([\d.]*)([pnuμ])([\d]*)$/i);
+      if (match) {
+        const num = parseFloat((match[1]||'0') + '.' + (match[3]||'0'));
+        const unit = match[2].toLowerCase();
+        const muls = {p:1, n:1e3, u:1e6, 'μ':1e6};
+        const pf = num * (muls[unit]||1);
+        results.push({ type:'Capacitor', value: this.fmtC(pf) });
+      }
+    }
+
+    if (!results.length) {
+      el('smd-result').innerHTML = '<span style="color:#666">No match</span>';
+      return;
+    }
+
+    el('smd-result').innerHTML = results.map(r =>
+      `<div style="margin-bottom:4px"><span style="color:#888;font-size:10px">${r.type}:</span> <strong>${r.value}</strong></div>`
+    ).join('');
+  }
+
+  fmtR(ohms) {
+    if (ohms >= 1e6) return (ohms/1e6).toFixed(ohms%1e6?1:0) + ' MΩ';
+    if (ohms >= 1e3) return (ohms/1e3).toFixed(ohms%1e3?1:0) + ' kΩ';
+    return ohms.toFixed(ohms<1?2:ohms<10?1:0) + ' Ω';
+  }
+
+  fmtC(pf) {
+    if (pf >= 1e6) return (pf/1e6).toFixed(pf%1e6?1:0) + ' µF';
+    if (pf >= 1e3) return (pf/1e3).toFixed(pf%1e3?1:0) + ' nF';
+    return pf.toFixed(pf<1?2:0) + ' pF';
   }
 }
 
