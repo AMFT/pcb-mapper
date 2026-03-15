@@ -331,7 +331,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; colo
     <button onclick="app.set3DView('front')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">◻ Front</button>
     <button onclick="app.set3DView('iso')" style="background:#16213e;color:#e0e0e0;border:1px solid #0f3460;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px">◇ Iso</button>
   </div>
-  <div id="v3d-info">Drag to rotate • Scroll to zoom • Right-drag to pan</div>
+  <div id="v3d-info">Drag to rotate • Scroll to zoom • Shift-drag or middle-click to pan</div>
 </div>
 
 <!-- Component Modal -->
@@ -856,12 +856,13 @@ class PCBMapper {
     const id = d?.id || this.genId(), label = d?.label || 'V' + id.replace('o',''), mt = d?.markerType || 'via';
     const holeSize = d?.holeSize || (mt === 'hole' ? 8 : mt === 'via' ? 4 : 3);
     const c = new fabric.Circle({ left:x, top:y, radius: holeSize, fill:MARKER_COLORS[mt], stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', selectable:this.tool==='select', hasControls:false });
-    c.pcb = { id, t:'marker', label, markerType:mt, layer:this.layer, x, y, holeSize };
+    const layer = d?.layer || this.layer;
+    c.pcb = { id, t:'marker', label, markerType:mt, layer, x, y, holeSize };
     const tx = new fabric.Text(label, { left:x+10, top:y-8, fontSize:11, fill:'#fff', fontFamily:'monospace', selectable:false, evented:false });
     tx.pcb = { lf: id };
     c.on('moving', () => { tx.set({left:c.left+10,top:c.top-8}); c.pcb.x=c.left; c.pcb.y=c.top; this.updateNets(id); });
     this.canvas.add(c, tx);
-    this.data.markers.push(c.pcb);
+    if (!this.data.markers.find(m => m.id === id)) this.data.markers.push(c.pcb);
     this.refreshUI();
     return c;
   }
@@ -869,13 +870,15 @@ class PCBMapper {
   addSMD(x, y, d) {
     const id = d?.id || this.genId(), label = d?.label || 'P' + id.replace('o','');
     const pw = d?.padWidth || 14, ph = d?.padHeight || 8;
+    const layer = d?.layer || this.layer;
     const r = new fabric.Rect({ left:x, top:y, width:pw, height:ph, fill:'#00ccaa', stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', rx:2, ry:2, selectable:this.tool==='select', hasControls:false });
-    r.pcb = { id, t:'smd', label, layer:this.layer, x, y, padWidth:pw, padHeight:ph };
+    r.pcb = { id, t:'smd', label, layer, x, y, padWidth:pw, padHeight:ph };
     const tx = new fabric.Text(label, { left:x+12, top:y-6, fontSize:10, fill:'#00ccaa', fontFamily:'monospace', selectable:false, evented:false });
     tx.pcb = { lf: id };
     r.on('moving', () => { tx.set({left:r.left+12,top:r.top-6}); r.pcb.x=r.left; r.pcb.y=r.top; this.updateNets(id); });
     this.canvas.add(r, tx);
-    this.data.markers.push(r.pcb);
+    // Only push to data if not already present (rebuild calls this with existing data)
+    if (!this.data.markers.find(m => m.id === id)) this.data.markers.push(r.pcb);
     this.refreshUI();
   }
 
@@ -2194,8 +2197,19 @@ class PCBMapper {
       scene.add(mesh);
     });
 
-    // Markers (vias/through-holes) — skip alignment points and pins
-    this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align').forEach(m => {
+    // SMD pads (surface only)
+    this.data.markers.filter(m => m.t === 'smd').forEach(m => {
+      const pw = (m.padWidth || 14) * 0.8, ph = (m.padHeight || 8) * 0.8;
+      const isBottom = (m.layer === 'bottom');
+      const yPos = isBottom ? -(boardThickness/2 + copperThick/2) : (boardThickness/2 + copperThick/2);
+      const geo = new THREE.BoxGeometry(pw, copperThick, ph);
+      const mesh = new THREE.Mesh(geo, copperMat);
+      mesh.position.set(m.x - cx, yPos, -(m.y - cy));
+      scene.add(mesh);
+    });
+
+    // Markers (vias/through-holes) — skip alignment points, pins, and SMD pads
+    this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align' && m.t !== 'smd').forEach(m => {
       const r = (m.holeSize || (m.markerType === 'hole' ? 8 : 4)) * 0.6;
       const geo = new THREE.CylinderGeometry(r, r, boardThickness * 1.3, 12);
       const mesh = new THREE.Mesh(geo, holeMat);
@@ -2338,7 +2352,7 @@ class PCBMapper {
 
     renderer.domElement.addEventListener('mousedown', (e) => {
       isDragging = true;
-      isRightDrag = e.button === 2;
+      isRightDrag = e.button === 2 || e.button === 1; // right or middle click = pan
       lastX = e.clientX; lastY = e.clientY;
       e.preventDefault();
     });
@@ -2346,9 +2360,11 @@ class PCBMapper {
     renderer.domElement.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      if (isRightDrag) {
-        orb.panX -= dx * orb.dist * 0.001;
-        orb.panZ -= dy * orb.dist * 0.001;
+      if (isRightDrag || e.shiftKey) {
+        // Pan: move in the camera's local XZ plane
+        const panSpeed = orb.dist * 0.002;
+        orb.panX -= dx * Math.cos(orb.theta) * panSpeed + dy * Math.sin(orb.theta) * panSpeed * 0.5;
+        orb.panZ += dx * Math.sin(orb.theta) * panSpeed - dy * Math.cos(orb.theta) * panSpeed * 0.5;
       } else {
         orb.theta -= dx * 0.005;
         orb.phi = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, orb.phi + dy * 0.005));
