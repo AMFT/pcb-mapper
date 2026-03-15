@@ -1,0 +1,2217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB Mapper v5 — Reverse Engineering Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; user-select: none; }
+
+#toolbar { width: 64px; background: #16213e; display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 2px; border-right: 1px solid #0f3460; z-index: 10; overflow-y: auto; }
+.tool-btn { width: 54px; min-height: 46px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: #a0a0c0; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 17px; transition: all 0.12s; position: relative; flex-shrink: 0; gap: 1px; padding: 3px 0; }
+.tool-btn:hover { background: #1a3a6e; color: #fff; }
+.tool-btn.active { background: #0f3460; border-color: #e94560; color: #e94560; }
+.tool-btn .lbl { font-size: 8px; line-height: 1; letter-spacing: 0.3px; opacity: 0.7; }
+.tool-btn.active .lbl { opacity: 1; }
+.tool-btn .tip { display: none; position: absolute; left: 60px; background: #222; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 100; pointer-events: none; }
+.tool-btn:hover .tip { display: block; }
+.tool-sep { width: 36px; height: 1px; background: #0f3460; margin: 2px 0; flex-shrink: 0; }
+
+#canvas-wrap { flex: 1; position: relative; background: #0d1117; overflow: hidden; }
+#board-canvas { position: absolute; top: 0; left: 0; }
+
+#topbar { position: absolute; top: 0; left: 0; right: 0; height: 36px; background: rgba(22,33,62,0.95); display: flex; align-items: center; padding: 0 8px; gap: 6px; z-index: 5; border-bottom: 1px solid #0f3460; font-size: 12px; }
+#topbar select, #topbar button { background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px; white-space: nowrap; }
+#topbar button:hover { background: #0f3460; }
+#topbar .spacer { flex: 1; min-width: 2px; }
+#zoom-display { color: #888; font-size: 11px; }
+
+/* Pin placement banner */
+#pin-banner { display: none; position: absolute; top: 40px; left: 50%; transform: translateX(-50%); background: #e94560; color: #fff; padding: 8px 20px; border-radius: 0 0 8px 8px; font-size: 13px; font-weight: bold; z-index: 6; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+#pin-banner .pin-cancel { margin-left: 12px; cursor: pointer; opacity: 0.8; font-size: 11px; text-decoration: underline; }
+
+#panel { width: 280px; background: #16213e; border-left: 1px solid #0f3460; display: flex; flex-direction: column; overflow: hidden; }
+#panel-tabs { display: flex; border-bottom: 1px solid #0f3460; }
+.ptab { flex: 1; padding: 7px 2px; text-align: center; cursor: pointer; font-size: 10px; color: #888; border-bottom: 2px solid transparent; }
+.ptab.active { color: #e94560; border-bottom-color: #e94560; }
+.pcontent { flex: 1; overflow-y: auto; padding: 6px; font-size: 11px; display: none; }
+.pcontent.active { display: block; }
+.pcontent::-webkit-scrollbar { width: 5px; }
+.pcontent::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+.psection { margin-bottom: 10px; }
+.psection h3 { color: #e94560; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+.psection ul { list-style: none; }
+.psection li { padding: 2px 4px; border-radius: 3px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.psection li:hover { background: #1a3a6e; }
+.psection li .x { color: #e94560; cursor: pointer; display: none; font-size: 13px; padding: 0 4px; }
+.psection li:hover .x { display: inline; }
+
+#props { padding: 8px; }
+#props label { display: block; font-size: 10px; color: #888; margin: 5px 0 2px; }
+#props input, #props select { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 3px 6px; font-size: 11px; }
+
+#statusbar { position: absolute; bottom: 0; left: 0; right: 0; height: 22px; background: rgba(22,33,62,0.95); display: flex; align-items: center; padding: 0 10px; font-size: 10px; color: #666; z-index: 5; border-top: 1px solid #0f3460; gap: 14px; }
+
+/* Resistor decoder */
+.res-band-row { display: flex; gap: 4px; margin: 4px 0; align-items: center; }
+.res-band-row select { flex: 1; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 3px; padding: 2px 4px; font-size: 11px; }
+.res-band-row label { font-size: 10px; color: #888; width: 50px; flex-shrink: 0; }
+.res-result { background: #1a1a2e; padding: 8px; border-radius: 4px; margin-top: 6px; font-size: 13px; color: #4488ff; text-align: center; font-weight: bold; }
+.res-visual { display: flex; align-items: center; justify-content: center; margin: 8px 0; height: 30px; background: #2a2a3e; border-radius: 4px; gap: 3px; padding: 0 20px; }
+.res-band { width: 8px; height: 24px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.15); }
+.res-body { width: 80px; height: 20px; background: #c4a67a; border-radius: 3px; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; }
+
+/* Context menu */
+#ctx-menu { display: none; position: fixed; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 4px 0; z-index: 100; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+#ctx-menu .ctx-item { padding: 6px 12px; cursor: pointer; font-size: 12px; }
+#ctx-menu .ctx-item:hover { background: #1a3a6e; }
+#ctx-menu .ctx-sep { height: 1px; background: #0f3460; margin: 2px 0; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 50; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px; min-width: 280px; }
+.modal h3 { margin-bottom: 10px; color: #e94560; font-size: 14px; }
+.modal label { display: block; font-size: 11px; color: #888; margin: 6px 0 3px; }
+.modal input, .modal select { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+.modal .mbtn { display: flex; gap: 6px; margin-top: 12px; justify-content: flex-end; }
+.modal button { padding: 5px 14px; border-radius: 4px; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; cursor: pointer; font-size: 12px; }
+.modal button.primary { background: #e94560; border-color: #e94560; color: #fff; }
+.pour-color-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.pour-color-row input[type=color] { width: 36px; height: 28px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; cursor: pointer; }
+.pour-color-row input[type=range] { flex: 1; }
+
+/* 3D Viewer */
+#viewer3d { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 200; }
+#viewer3d canvas { width: 100% !important; height: 100% !important; }
+#v3d-close { position: fixed; top: 12px; right: 16px; z-index: 201; background: #e94560; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+#v3d-info { position: fixed; bottom: 12px; left: 16px; z-index: 201; color: #888; font-size: 11px; }
+
+/* Property sliders */
+.prop-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.prop-row label { font-size: 10px; color: #888; min-width: 50px; }
+.prop-row input[type=range] { flex: 1; }
+.prop-row .prop-val { font-size: 10px; color: #aaa; min-width: 30px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button class="tool-btn active" data-tool="select"><span>⊹</span><span class="lbl">SELECT</span><span class="tip">Select (V)</span></button>
+  <button class="tool-btn" data-tool="pan"><span>✋</span><span class="lbl">PAN</span><span class="tip">Pan (H)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="marker"><span>⊙</span><span class="lbl">MARKER</span><span class="tip">Marker (M)</span></button>
+  <button class="tool-btn" data-tool="component"><span>▣</span><span class="lbl">COMP</span><span class="tip">Component (C)</span></button>
+  <button class="tool-btn" data-tool="smd"><span>▪</span><span class="lbl">SMD</span><span class="tip">SMD Pad (S)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="net"><span>⟋</span><span class="lbl">NET</span><span class="tip">Net (N)</span></button>
+  <button class="tool-btn" data-tool="trace"><span>╱</span><span class="lbl">TRACE</span><span class="tip">Trace (T)</span></button>
+  <button class="tool-btn" data-tool="pour"><span>⬡</span><span class="lbl">POUR</span><span class="tip">Pour (P)</span></button>
+  <button class="tool-btn" data-tool="punchout"><span>⊘</span><span class="lbl">PUNCH</span><span class="tip">Punchout (X)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="outline"><span>▢</span><span class="lbl">EDGE</span><span class="tip">Board Outline (O)</span></button>
+  <button class="tool-btn" data-tool="align"><span>⊞</span><span class="lbl">ALIGN</span><span class="tip">Align Point (A)</span></button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="topbar">
+    <button onclick="el('img-top').click()">📷 Top</button>
+    <button onclick="el('img-bot').click()">📷 Bottom</button>
+    <input type="file" id="img-top" accept="image/*" style="display:none">
+    <input type="file" id="img-bot" accept="image/*" style="display:none">
+    <select id="layer-select"><option value="top">Top</option><option value="bottom">Bottom</option><option value="both">Both</option></select>
+    <button onclick="app.flipBottom()">🔄 Flip</button>
+    <button onclick="app.applyAlignment()">📐 Align</button>
+    <span class="spacer"></span>
+    <button onclick="app.undo()">↩</button>
+    <button onclick="app.redo()">↪</button>
+    <span class="spacer"></span>
+    <button onclick="app.save()">💾 Save</button>
+    <button onclick="el('load-f').click()">📂 Load</button>
+    <input type="file" id="load-f" accept=".json,.zip,.pcbm" style="display:none">
+    <button onclick="app.exportMD()">📋</button>
+    <button onclick="app.exportGerber()" style="background:#1a3a1a;color:#44cc44;font-weight:bold" title="Export Gerber RS-274X + Excellon drill files">⚡ Gerber</button>
+    <button onclick="app.open3D()" style="background:#0f3460;color:#4488ff;font-weight:bold">🧊 3D</button>
+    <span id="zoom-display">100%</span>
+  </div>
+  <div id="pin-banner">
+    <span id="pin-banner-text">Place pin 1 of 8</span>
+    <span class="pin-cancel" onclick="app.cancelPinPlace()">cancel</span>
+  </div>
+  <canvas id="board-canvas"></canvas>
+  <div id="statusbar">
+    <span id="st-tool">Select</span>
+    <span id="st-pos">0, 0</span>
+    <span id="st-info">Ready</span>
+  </div>
+</div>
+
+<div id="panel">
+  <div id="panel-tabs">
+    <div class="ptab active" data-tab="comps">Parts</div>
+    <div class="ptab" data-tab="nets">Nets</div>
+    <div class="ptab" data-tab="props">Props</div>
+    <div class="ptab" data-tab="resistor">Ω Calc</div>
+  </div>
+  <div class="pcontent active" id="tab-comps">
+    <div class="psection"><h3>Components</h3><ul id="cl-comp"></ul></div>
+    <div class="psection"><h3>Markers</h3><ul id="cl-mark"></ul></div>
+  </div>
+  <div class="pcontent" id="tab-nets">
+    <div class="psection"><h3>Connections</h3><ul id="cl-net"></ul></div>
+    <div class="psection"><h3>Pours</h3><ul id="cl-pour"></ul></div>
+    <div class="psection"><h3>Traces</h3><ul id="cl-trace"></ul></div>
+  </div>
+  <div class="pcontent" id="tab-props">
+    <div id="props"><p style="color:#666">Select an element</p></div>
+  </div>
+  <div class="pcontent" id="tab-resistor">
+    <div class="psection">
+      <h3>Resistor Color Decoder</h3>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:10px;color:#888">Band count</label>
+        <select id="res-bands" onchange="app.updateResistorInputs()" style="background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:3px;padding:2px;font-size:11px;width:100%">
+          <option value="4">4-band</option>
+          <option value="5">5-band</option>
+        </select>
+      </div>
+      <div id="res-inputs"></div>
+      <div class="res-visual" id="res-visual"></div>
+      <div class="res-result" id="res-result">—</div>
+      <div style="margin-top:10px">
+        <h3>Value → Colors</h3>
+        <input id="res-val-input" placeholder="e.g. 4.7k, 22k, 100" style="background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:4px;padding:4px 8px;font-size:12px;width:100%;margin-top:4px" oninput="app.reverseResistor()">
+        <div id="res-reverse" style="margin-top:6px;color:#888;font-size:11px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="ctx-menu"></div>
+
+<!-- 3D Viewer -->
+<div id="viewer3d">
+  <button id="v3d-close" onclick="app.close3D()">✕ Close</button>
+  <div id="v3d-info">Drag to rotate • Scroll to zoom • Right-drag to pan</div>
+</div>
+
+<!-- Component Modal -->
+<div class="modal-overlay" id="comp-modal">
+  <div class="modal">
+    <h3>Add Component</h3>
+    <label>Label</label><input id="cm-label" placeholder="IC2, C22, R13">
+    <label>Type</label>
+    <select id="cm-type"><option value="ic">IC</option><option value="cap">Capacitor</option><option value="res">Resistor</option><option value="diode">Diode</option><option value="transistor">Transistor</option><option value="inductor">Inductor</option><option value="transformer">Transformer</option></select>
+    <label>Pin Count</label><input id="cm-pins" type="number" value="8" min="1" max="200">
+    <label>Value / Notes</label><input id="cm-val" placeholder="100µF 50V, FA8849M">
+    <div class="mbtn"><button onclick="app.cancelComp()">Cancel</button><button class="primary" onclick="app.confirmComp()">Create</button></div>
+  </div>
+</div>
+
+<!-- Pour Modal -->
+<div class="modal-overlay" id="pour-modal">
+  <div class="modal">
+    <h3>Pour / Fill Zone</h3>
+    <label>Label</label><input id="pm-label" placeholder="GND, +5V">
+    <label>Net Type</label>
+    <select id="pm-type" onchange="app.pourTypeChanged()"><option value="ground">Ground</option><option value="power">Power</option><option value="signal">Signal</option><option value="other">Other</option></select>
+    <label>Color & Opacity</label>
+    <div class="pour-color-row">
+      <input type="color" id="pm-color" value="#888888">
+      <input type="range" id="pm-opacity" min="5" max="60" value="25">
+      <span id="pm-opval" style="font-size:10px;color:#888">25%</span>
+    </div>
+    <div class="mbtn"><button onclick="app.cancelPour()">Cancel</button><button class="primary" onclick="app.confirmPour()">Create</button></div>
+  </div>
+</div>
+
+<script>
+const el = id => document.getElementById(id);
+const NET_COLORS = { power: '#ff4444', ground: '#888888', signal: '#4488ff', other: '#44cc44' };
+const MARKER_COLORS = { via: '#ffaa00', hole: '#ff6600', pad: '#00ccaa' };
+
+// Resistor color data
+const R_COLORS = {
+  black:  { val: 0, mul: 1, hex: '#222222', text: '#fff' },
+  brown:  { val: 1, mul: 10, hex: '#8B4513', text: '#fff', tol: '±1%' },
+  red:    { val: 2, mul: 100, hex: '#FF0000', text: '#fff', tol: '±2%' },
+  orange: { val: 3, mul: 1e3, hex: '#FF8C00', text: '#000' },
+  yellow: { val: 4, mul: 1e4, hex: '#FFD700', text: '#000' },
+  green:  { val: 5, mul: 1e5, hex: '#228B22', text: '#fff', tol: '±0.5%' },
+  blue:   { val: 6, mul: 1e6, hex: '#0000FF', text: '#fff', tol: '±0.25%' },
+  violet: { val: 7, mul: 1e7, hex: '#8B00FF', text: '#fff', tol: '±0.1%' },
+  grey:   { val: 8, mul: 1e8, hex: '#808080', text: '#fff', tol: '±0.05%' },
+  white:  { val: 9, mul: 1e9, hex: '#FFFFFF', text: '#000' },
+  gold:   { mul: 0.1, hex: '#FFD700', text: '#000', tol: '±5%' },
+  silver: { mul: 0.01, hex: '#C0C0C0', text: '#000', tol: '±10%' },
+};
+const R_DIGIT_NAMES = ['black','brown','red','orange','yellow','green','blue','violet','grey','white'];
+const R_MUL_NAMES = ['black','brown','red','orange','yellow','green','blue','violet','grey','white','gold','silver'];
+const R_TOL_NAMES = ['brown','red','green','blue','violet','grey','gold','silver'];
+
+class PCBMapper {
+  constructor() {
+    this.canvas = null;
+    this.tool = 'select';
+    this.layer = 'top';
+    this.topImg = null; this.botImg = null;
+    this.zoom = 1;
+    this.data = { components:[], markers:[], nets:[], traces:[], pours:[], alignPoints:{top:[],bottom:[]}, outline:[], idCounter:1 };
+    this.undoStack = []; this.redoStack = [];
+    this.netStart = null;
+    this.drawPts = []; this.drawPreview = null;
+    this.pendingPourPts = null;
+    this.compDragStart = null; this.compDragRect = null;
+    this.punchTarget = null;
+    this.isPanning = false; this.panX = 0; this.panY = 0;
+    // Pin placement mode
+    this.pinPlace = null; // { compId, label, pinCount, placed }
+    this.init();
+    this.updateResistorInputs();
+  }
+
+  genId() { return 'o' + (this.data.idCounter++); }
+
+  init() {
+    const wrap = el('canvas-wrap');
+    this.canvas = new fabric.Canvas('board-canvas', {
+      width: wrap.clientWidth, height: wrap.clientHeight,
+      backgroundColor: '#0d1117', selection: true, preserveObjectStacking: true, fireRightClick: true, stopContextMenu: true,
+    });
+    this.canvas.on('mouse:down', e => this.onDown(e));
+    this.canvas.on('mouse:move', e => this.onMove(e));
+    this.canvas.on('mouse:up', e => this.onUp(e));
+    this.canvas.on('mouse:wheel', e => this.onWheel(e));
+    this.canvas.on('mouse:dblclick', e => this.onDblClick(e));
+    this.canvas.on('selection:created', e => this.onSel(e));
+    this.canvas.on('selection:updated', e => this.onSel(e));
+    this.canvas.on('selection:cleared', () => { el('props').innerHTML = '<p style="color:#666">Select an element</p>'; });
+
+    document.addEventListener('keydown', e => this.onKey(e));
+    document.addEventListener('click', () => { el('ctx-menu').style.display = 'none'; });
+    el('img-top').addEventListener('change', e => this.loadImage(e, 'top'));
+    el('img-bot').addEventListener('change', e => this.loadImage(e, 'bottom'));
+    el('layer-select').addEventListener('change', e => { this.layer = e.target.value; this.updateLayers(); });
+    el('load-f').addEventListener('change', e => this.loadProject(e));
+    el('pm-opacity').addEventListener('input', () => { el('pm-opval').textContent = el('pm-opacity').value + '%'; });
+
+    document.querySelectorAll('.tool-btn').forEach(b => b.addEventListener('click', () => this.setTool(b.dataset.tool)));
+    document.querySelectorAll('.ptab').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.ptab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.pcontent').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      el('tab-' + t.dataset.tab).classList.add('active');
+    }));
+
+    window.addEventListener('resize', () => this.canvas.setDimensions({ width: wrap.clientWidth, height: wrap.clientHeight }));
+  }
+
+  // ===== TOOL =====
+  setTool(t) {
+    // Cancel pin placement if switching away
+    if (this.pinPlace && t !== 'component') this.cancelPinPlace();
+    this.tool = t;
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    el('st-tool').textContent = t[0].toUpperCase() + t.slice(1);
+    this.canvas.defaultCursor = t === 'pan' ? 'grab' : t === 'select' ? 'default' : 'crosshair';
+    this.canvas.selection = t === 'select';
+    // Only pins and markers are selectable, never component outlines
+    this.canvas.forEachObject(o => {
+      if (!o.pcb || o.pcb.t === 'img') return;
+      if (o.pcb.t === 'component' || o.pcb.t === 'outline') { o.selectable = false; o.evented = false; return; }
+      o.selectable = t === 'select';
+    });
+    if (!['trace','pour','punchout','outline'].includes(t)) { this.drawPts = []; this.rmPrev(); }
+    if (t !== 'net') this.netStart = null;
+    if (t !== 'component') { this.compDragStart = null; if (this.compDragRect) { this.canvas.remove(this.compDragRect); this.compDragRect = null; } }
+    if (t !== 'punchout') this.punchTarget = null;
+    const h = { select:'Click to select pins/markers. Right-click for options.', pan:'Drag to pan. Scroll to zoom.', marker:'Click to place. Dbl-click to rename.', component:'Drag to draw IC/component outline.', smd:'Click to place SMD pad.', net:'Click two pins/markers to connect.', trace:'Click points. Enter to finish.', pour:'Click boundary. Enter to finish.', punchout:'Click a pour, then draw cutout. Enter to finish.', outline:'Click board edge points. Enter to finish.', align:'Place alignment points. Switch layers for both sides.' };
+    this.status(h[t] || '');
+  }
+
+  // ===== EVENTS =====
+  onKey(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const k = e.key.toLowerCase();
+    if (e.ctrlKey && k === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
+    else if (e.ctrlKey && ((k === 'z' && e.shiftKey) || k === 'y')) { e.preventDefault(); this.redo(); }
+    else if (k === 'enter') { e.preventDefault(); this.finishDraw(); }
+    else if (k === 'escape') {
+      if (this.pinPlace) { this.cancelPinPlace(); return; }
+      this.finishDraw(); this.setTool('select');
+    }
+    else if (this.pinPlace) return; // Block tool shortcuts during pin placement
+    else if (k === 'v') this.setTool('select');
+    else if (k === 'h') this.setTool('pan');
+    else if (k === 'm') this.setTool('marker');
+    else if (k === 'c' && !e.ctrlKey) this.setTool('component');
+    else if (k === 's' && !e.ctrlKey) this.setTool('smd');
+    else if (k === 'n') this.setTool('net');
+    else if (k === 't') this.setTool('trace');
+    else if (k === 'p') this.setTool('pour');
+    else if (k === 'x') this.setTool('punchout');
+    else if (k === 'o' && !e.ctrlKey) this.setTool('outline');
+    else if (k === 'a' && !e.ctrlKey) this.setTool('align');
+    else if (k === 'delete' || k === 'backspace') this.delSelected();
+  }
+
+  onWheel(opt) {
+    opt.e.preventDefault();
+    let z = this.canvas.getZoom() * (0.999 ** opt.e.deltaY);
+    z = Math.max(0.02, Math.min(30, z));
+    this.canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, z);
+    this.zoom = z;
+    el('zoom-display').textContent = Math.round(z * 100) + '%';
+  }
+
+  onDown(opt) {
+    const e = opt.e;
+    if (e.button === 2) { this.showCtx(opt); return; }
+
+    // Pan with alt+click, middle click, or pan tool
+    if (this.tool === 'pan' || e.altKey || e.button === 1) {
+      this.isPanning = true; this.panX = e.clientX; this.panY = e.clientY;
+      this.canvas.defaultCursor = 'grabbing'; return;
+    }
+
+    const p = this.canvas.getPointer(e);
+
+    // PIN PLACEMENT MODE — takes priority over everything
+    if (this.pinPlace) { this.placePin(p); return; }
+
+    if (this.tool === 'marker') { this.pushUndo(); this.addMarker(p.x, p.y); }
+    else if (this.tool === 'smd') { this.pushUndo(); this.addSMD(p.x, p.y); }
+    else if (this.tool === 'component') this.startCompDrag(p);
+    else if (this.tool === 'net') this.doNet(p);
+    else if (this.tool === 'trace' || this.tool === 'pour' || this.tool === 'outline') { this.drawPts.push({x:p.x,y:p.y}); this.updatePrev(p); }
+    else if (this.tool === 'punchout') this.doPunchout(p, opt);
+    else if (this.tool === 'align') this.addAlignPt(p);
+  }
+
+  onMove(opt) {
+    const p = this.canvas.getPointer(opt.e);
+    el('st-pos').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+    if (this.isPanning) {
+      const vpt = this.canvas.viewportTransform;
+      vpt[4] += opt.e.clientX - this.panX; vpt[5] += opt.e.clientY - this.panY;
+      this.panX = opt.e.clientX; this.panY = opt.e.clientY;
+      this.canvas.requestRenderAll(); return;
+    }
+    if (this.tool === 'component' && this.compDragStart) this.updateCompDrag(p);
+    if (['trace','pour','punchout','outline'].includes(this.tool) && this.drawPts.length) this.updatePrev(p);
+  }
+
+  onUp(opt) {
+    if (this.isPanning) { this.isPanning = false; this.canvas.defaultCursor = this.tool === 'pan' ? 'grab' : this.tool === 'select' ? 'default' : 'crosshair'; return; }
+    if (this.tool === 'component' && this.compDragStart && !this.pinPlace) this.finishCompDrag(this.canvas.getPointer(opt.e));
+  }
+
+  onDblClick(opt) {
+    const t = opt.target;
+    if (t && t.pcb && ['marker','smd','pin'].includes(t.pcb.t)) {
+      const nl = prompt('Rename:', t.pcb.label || '');
+      if (nl !== null) { this.pushUndo(); t.pcb.label = nl; const tx = this.findLabel(t.pcb.id); if (tx) tx.set('text', nl); this.canvas.requestRenderAll(); this.refreshUI(); }
+      return;
+    }
+    this.finishDraw();
+  }
+
+  onSel(opt) { const o = opt.selected?.[0]; if (o?.pcb) this.showProps(o); }
+
+  // ===== CONTEXT MENU =====
+  showCtx(opt) {
+    const menu = el('ctx-menu');
+    const t = opt.target;
+    let items = '';
+    if (t && t.pcb) {
+      if (t.pcb.t === 'component') {
+        items += `<div class="ctx-item" onclick="app.ctxRename('${t.pcb.id}')">✏️ Rename Component</div>`;
+        items += `<div class="ctx-item" onclick="app.ctxAddPins('${t.pcb.id}')">📌 Add More Pins</div>`;
+        items += `<div class="ctx-item" onclick="app.ctxDelete('${t.pcb.id}')">🗑️ Delete Component</div>`;
+      } else {
+        items += `<div class="ctx-item" onclick="app.ctxRename('${t.pcb.id}')">✏️ Rename</div>`;
+        if (t.pcb.t === 'pin') items += `<div class="ctx-item" onclick="app.ctxEditPin('${t.pcb.id}')">📌 Edit Pin Label</div>`;
+        items += `<div class="ctx-item" onclick="app.ctxDelete('${t.pcb.id}')">🗑️ Delete</div>`;
+        if (['marker','smd','pin'].includes(t.pcb.t)) {
+          items += `<div class="ctx-sep"></div>`;
+          items += `<div class="ctx-item" onclick="app.ctxStartNet('${t.pcb.id}')">⟋ Start Net From Here</div>`;
+        }
+      }
+    }
+    if (!items) items = '<div class="ctx-item" style="color:#666">No actions</div>';
+    menu.innerHTML = items;
+    menu.style.display = 'block';
+    menu.style.left = opt.e.clientX + 'px';
+    menu.style.top = opt.e.clientY + 'px';
+  }
+
+  ctxRename(id) {
+    el('ctx-menu').style.display = 'none';
+    const obj = this.findObj(id);
+    if (!obj) return;
+    const nl = prompt('Rename:', obj.pcb.label || '');
+    if (nl !== null) {
+      this.pushUndo();
+      obj.pcb.label = nl;
+      const tx = this.findLabel(id);
+      if (tx) {
+        tx.set('text', obj.pcb.t === 'component' ? `${nl}${obj.pcb.value?' — '+obj.pcb.value:''}` : nl);
+      }
+      this.canvas.requestRenderAll();
+      this.refreshUI();
+    }
+  }
+
+  ctxEditPin(id) {
+    el('ctx-menu').style.display = 'none';
+    const obj = this.findObj(id);
+    if (!obj) return;
+    const nl = prompt('Pin label:', obj.pcb.label || '');
+    if (nl !== null) { this.pushUndo(); obj.pcb.label = nl; const tx = this.findLabel(id); if (tx) tx.set('text', nl); this.canvas.requestRenderAll(); this.refreshUI(); }
+  }
+
+  ctxDelete(id) { el('ctx-menu').style.display = 'none'; this.delById(id); }
+
+  ctxStartNet(id) {
+    el('ctx-menu').style.display = 'none';
+    const obj = this.findObj(id);
+    if (!obj) return;
+    this.setTool('net');
+    this.netStart = obj.pcb;
+    this.status(`From: ${obj.pcb.label} — click destination`);
+  }
+
+  ctxAddPins(compId) {
+    el('ctx-menu').style.display = 'none';
+    const comp = this.data.components.find(c => c.id === compId);
+    if (!comp) return;
+    const count = prompt('How many pins to add?', '1');
+    if (!count || isNaN(parseInt(count))) return;
+    const n = parseInt(count);
+    const existing = this.data.markers.filter(m => m.t === 'pin' && m.parentId === compId).length;
+    comp.pinCount = existing + n;
+    this.pinPlace = { compId, label: comp.label, pinCount: n, placed: 0, startNum: existing + 1 };
+    this.canvas.defaultCursor = 'crosshair';
+    this.updatePinBanner();
+  }
+
+  // ===== UNDO =====
+  pushUndo() { this.undoStack.push(JSON.stringify(this.data)); if (this.undoStack.length > 50) this.undoStack.shift(); this.redoStack = []; }
+  undo() { if (!this.undoStack.length) return; this.redoStack.push(JSON.stringify(this.data)); this.restore(this.undoStack.pop()); }
+  redo() { if (!this.redoStack.length) return; this.undoStack.push(JSON.stringify(this.data)); this.restore(this.redoStack.pop()); }
+
+  // ===== MARKERS =====
+  addMarker(x, y, d) {
+    const id = d?.id || this.genId(), label = d?.label || 'V' + id.replace('o',''), mt = d?.markerType || 'via';
+    const holeSize = d?.holeSize || (mt === 'hole' ? 8 : mt === 'via' ? 4 : 3);
+    const c = new fabric.Circle({ left:x, top:y, radius: holeSize, fill:MARKER_COLORS[mt], stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', selectable:this.tool==='select', hasControls:false });
+    c.pcb = { id, t:'marker', label, markerType:mt, layer:this.layer, x, y, holeSize };
+    const tx = new fabric.Text(label, { left:x+10, top:y-8, fontSize:11, fill:'#fff', fontFamily:'monospace', selectable:false, evented:false });
+    tx.pcb = { lf: id };
+    c.on('moving', () => { tx.set({left:c.left+10,top:c.top-8}); c.pcb.x=c.left; c.pcb.y=c.top; this.updateNets(id); });
+    this.canvas.add(c, tx);
+    this.data.markers.push(c.pcb);
+    this.refreshUI();
+    return c;
+  }
+
+  addSMD(x, y, d) {
+    const id = d?.id || this.genId(), label = d?.label || 'SMD' + id.replace('o','');
+    const r = new fabric.Rect({ left:x, top:y, width:14, height:8, fill:'#00ccaa', stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', rx:2, ry:2, selectable:this.tool==='select', hasControls:false });
+    r.pcb = { id, t:'smd', label, layer:this.layer, x, y };
+    const tx = new fabric.Text(label, { left:x+12, top:y-6, fontSize:10, fill:'#00ccaa', fontFamily:'monospace', selectable:false, evented:false });
+    tx.pcb = { lf: id };
+    r.on('moving', () => { tx.set({left:r.left+12,top:r.top-6}); r.pcb.x=r.left; r.pcb.y=r.top; this.updateNets(id); });
+    this.canvas.add(r, tx);
+    this.data.markers.push(r.pcb);
+    this.refreshUI();
+  }
+
+  // ===== COMPONENTS =====
+  startCompDrag(p) {
+    if (this.pinPlace) return; // Don't start new comp while placing pins
+    this.compDragStart = p;
+    this.compDragRect = new fabric.Rect({ left:p.x, top:p.y, width:1, height:1, fill:'rgba(100,100,255,0.15)', stroke:'#6666ff', strokeWidth:1.5, strokeDashArray:[4,2], selectable:false, evented:false });
+    this.canvas.add(this.compDragRect);
+  }
+
+  updateCompDrag(p) {
+    if (!this.compDragRect) return;
+    const s = this.compDragStart;
+    this.compDragRect.set({ left:Math.min(s.x,p.x), top:Math.min(s.y,p.y), width:Math.abs(p.x-s.x), height:Math.abs(p.y-s.y) });
+    this.canvas.requestRenderAll();
+  }
+
+  finishCompDrag(p) {
+    if (!this.compDragStart) return;
+    const s = this.compDragStart;
+    if (this.compDragRect) { this.canvas.remove(this.compDragRect); this.compDragRect = null; }
+    let w = Math.abs(p.x-s.x), h = Math.abs(p.y-s.y);
+    if (w < 5 && h < 5) { this.compDragStart = null; return; }
+    const x1 = Math.min(s.x,p.x), y1 = Math.min(s.y,p.y);
+    this.compBounds = { x1, y1, x2:x1+w, y2:y1+h };
+    this.compDragStart = null;
+    el('comp-modal').classList.add('show');
+    el('cm-label').focus();
+  }
+
+  confirmComp() {
+    const label = el('cm-label').value||'U?', type = el('cm-type').value, pins = parseInt(el('cm-pins').value)||2, val = el('cm-val').value||'';
+    this.pushUndo();
+    const id = this.genId();
+    // Build the outline (locked, non-interactive)
+    this.buildCompOutline(this.compBounds, id, label, type, pins, val);
+    el('comp-modal').classList.remove('show');
+    el('cm-label').value=''; el('cm-val').value='';
+
+    // Enter pin placement mode
+    this.pinPlace = { compId: id, label, pinCount: pins, placed: 0, startNum: 1 };
+    this.canvas.defaultCursor = 'crosshair';
+    this.updatePinBanner();
+  }
+
+  cancelComp() {
+    this.compDragStart = null;
+    if (this.compDragRect) { this.canvas.remove(this.compDragRect); this.compDragRect = null; }
+    el('comp-modal').classList.remove('show');
+  }
+
+  // Build JUST the outline (locked, not selectable)
+  buildCompOutline(b, id, label, type, pins, val, layer) {
+    const w = b.x2-b.x1, h = b.y2-b.y1;
+    const rect = new fabric.Rect({
+      left:b.x1, top:b.y1, width:w, height:h,
+      fill:'rgba(100,100,255,0.08)', stroke:'#6666ff', strokeWidth:1.5, strokeDashArray:[4,2],
+      selectable:false, evented:true, hasControls:false, lockMovementX:true, lockMovementY:true,
+    });
+    rect.pcb = { id, t:'component', label, compType:type, pinCount:pins, value:val, layer: layer || this.layer, bounds:{...b} };
+
+    const tx = new fabric.Text(`${label}${val?' — '+val:''}`, {
+      left:b.x1+4, top:b.y1-16, fontSize:12, fill:'#aaf', fontFamily:'monospace', fontWeight:'bold',
+      selectable:false, evented:false
+    });
+    tx.pcb = { lf: id };
+
+    // Pin 1 dot for ICs
+    if (type === 'ic') {
+      const dot = new fabric.Circle({ left:b.x1+6, top:b.y1+6, radius:3, fill:'#aaf', selectable:false, evented:false, originX:'center', originY:'center' });
+      dot.pcb = { df: id };
+      this.canvas.add(dot);
+    }
+
+    this.canvas.add(rect, tx);
+    this.data.components.push(rect.pcb);
+    this.refreshUI();
+  }
+
+  // ===== PIN PLACEMENT =====
+  placePin(p) {
+    const s = this.pinPlace;
+    if (!s) return;
+    const pn = s.startNum + s.placed;
+    const pid = s.compId + '_p' + pn;
+
+    const pin = new fabric.Circle({
+      left:p.x, top:p.y, radius:4, fill:'#fc0', stroke:'#fff', strokeWidth:1,
+      originX:'center', originY:'center', selectable:true, hasControls:false
+    });
+    pin.pcb = { id:pid, t:'pin', label: s.label + ' P' + pn, parentId:s.compId, pinNum:pn, x:p.x, y:p.y, layer:this.layer };
+
+    const pl = new fabric.Text('' + pn, {
+      left:p.x+8, top:p.y-6, fontSize:10, fill:'#fc0', fontFamily:'monospace',
+      selectable:false, evented:false
+    });
+    pl.pcb = { lf: pid };
+
+    pin.on('moving', () => {
+      pl.set({left:pin.left+8, top:pin.top-6});
+      pin.pcb.x = pin.left; pin.pcb.y = pin.top;
+      this.updateNets(pid);
+    });
+
+    this.canvas.add(pin, pl);
+    this.data.markers.push(pin.pcb);
+    s.placed++;
+
+    if (s.placed >= s.pinCount) {
+      this.pinPlace = null;
+      el('pin-banner').style.display = 'none';
+      this.canvas.defaultCursor = 'default';
+      this.status(`All ${s.pinCount} pins placed for ${s.label}`);
+      this.setTool('select');
+    } else {
+      this.updatePinBanner();
+    }
+    this.refreshUI();
+  }
+
+  updatePinBanner() {
+    if (!this.pinPlace) { el('pin-banner').style.display = 'none'; return; }
+    const s = this.pinPlace;
+    const nextPin = s.startNum + s.placed;
+    el('pin-banner-text').textContent = `${s.label}: Place pin ${nextPin} (${s.placed}/${s.pinCount} done)`;
+    el('pin-banner').style.display = 'block';
+  }
+
+  cancelPinPlace() {
+    this.pinPlace = null;
+    el('pin-banner').style.display = 'none';
+    this.canvas.defaultCursor = 'default';
+    this.status('Pin placement cancelled');
+  }
+
+  // ===== NETS =====
+  doNet(p) {
+    const t = this.nearMarker(p, 25);
+    if (!t) { this.status('Click on a marker or pin'); return; }
+    if (!this.netStart) { this.netStart = t; this.status(`From: ${t.label}`); }
+    else {
+      if (this.netStart.id === t.id) { this.netStart=null; this.status('Cancelled'); return; }
+      this.pushUndo();
+      this.buildNet(this.netStart, t);
+      this.netStart = null; this.status('Net created');
+    }
+  }
+
+  buildNet(from, to, d) {
+    const id = d?.id || this.genId(), nt = d?.netType || 'signal';
+    const line = new fabric.Line([from.x, from.y, to.x, to.y], { stroke:NET_COLORS[nt], strokeWidth:2, selectable:this.tool==='select', hasControls:false, strokeDashArray:[6,3] });
+    line.pcb = { id, t:'net', fromId:from.id, toId:to.id, netType:nt, label:d?.label||'' };
+    this.canvas.add(line); this.canvas.sendToBack(line);
+    this.data.nets.push(line.pcb);
+    this.refreshUI();
+  }
+
+  nearMarker(p, max) {
+    let best=null, bd=max;
+    this.canvas.getObjects().forEach(o => {
+      if (!o.pcb || !['marker','smd','pin'].includes(o.pcb.t)) return;
+      const d = Math.hypot((o.pcb.x||o.left)-p.x, (o.pcb.y||o.top)-p.y);
+      if (d < bd) { bd=d; best=o.pcb; }
+    });
+    return best;
+  }
+
+  updateNets(mid) {
+    const m = this.findObj(mid);
+    if (!m) return;
+    const mx=m.left, my=m.top;
+    this.canvas.getObjects().forEach(o => {
+      if (!o.pcb || o.pcb.t !== 'net') return;
+      if (o.pcb.fromId === mid) o.set({x1:mx,y1:my});
+      if (o.pcb.toId === mid) o.set({x2:mx,y2:my});
+    });
+    this.canvas.requestRenderAll();
+  }
+
+  // ===== DRAWING (trace/pour/punchout/outline) =====
+  updatePrev(p) {
+    this.rmPrev();
+    if (!this.drawPts.length) return;
+    const pts = [...this.drawPts, {x:p.x,y:p.y}];
+    const isPoly = ['pour','punchout','outline'].includes(this.tool);
+    const colors = { trace:'#44ff88', pour:'#ff8844', punchout:'#ff4444', outline:'#ffffff' };
+    const color = colors[this.tool] || '#44ff88';
+    if (isPoly) {
+      this.drawPreview = new fabric.Polygon(pts, { stroke:color, strokeWidth:1.5, fill:color+'15', strokeDashArray:[4,4], selectable:false, evented:false });
+    } else {
+      this.drawPreview = new fabric.Polyline(pts, { stroke:color, strokeWidth:2, fill:'transparent', selectable:false, evented:false });
+    }
+    this.canvas.add(this.drawPreview);
+  }
+
+  rmPrev() { if (this.drawPreview) { this.canvas.remove(this.drawPreview); this.drawPreview = null; } }
+
+  finishDraw() {
+    this.rmPrev();
+    if (this.tool === 'trace' && this.drawPts.length >= 2) {
+      this.pushUndo();
+      const id = this.genId();
+      const traceWidth = this.lastTraceWidth || 3;
+      const pl = new fabric.Polyline([...this.drawPts], { stroke:'#44ff88', strokeWidth:traceWidth, fill:'transparent', selectable:this.tool==='select', hasControls:false, strokeLineCap:'round', strokeLineJoin:'round' });
+      pl.pcb = { id, t:'trace', points:[...this.drawPts], layer:this.layer, label:'', width:traceWidth };
+      this.canvas.add(pl);
+      this.data.traces.push(pl.pcb);
+      this.drawPts = []; this.refreshUI(); this.status('Trace created');
+    } else if (this.tool === 'pour' && this.drawPts.length >= 3) {
+      this.pendingPourPts = [...this.drawPts];
+      this.drawPts = [];
+      this.pourTypeChanged();
+      el('pour-modal').classList.add('show');
+    } else if (this.tool === 'punchout' && this.drawPts.length >= 3 && this.punchTarget) {
+      this.pushUndo();
+      const pd = this.punchTarget.pcb;
+      const cutId = this.genId();
+      if (!pd.cutouts) pd.cutouts = [];
+      pd.cutouts.push({ id:cutId, points:[...this.drawPts] });
+      // Update the pour data
+      const pourData = this.data.pours.find(p => p.id === pd.id);
+      if (pourData) {
+        if (!pourData.cutouts) pourData.cutouts = [];
+        pourData.cutouts.push({ id:cutId, points:[...this.drawPts] });
+      }
+      this.rebuildPour(pourData || pd);
+      this.drawPts = []; this.punchTarget = null;
+      this.refreshUI(); this.status('Cutout applied');
+    } else if (this.tool === 'outline' && this.drawPts.length >= 3) {
+      this.pushUndo();
+      this.canvas.getObjects().filter(o => o.pcb && o.pcb.t === 'outline').forEach(o => this.canvas.remove(o));
+      const pts = [...this.drawPts];
+      const pg = new fabric.Polygon(pts, { stroke:'#fff', strokeWidth:2, fill:'transparent', strokeDashArray:[8,4], selectable:false, evented:false, hasControls:false });
+      pg.pcb = { id: this.genId(), t:'outline', points:pts };
+      this.canvas.add(pg); this.canvas.sendToBack(pg);
+      this.data.outline = pts;
+      this.drawPts = []; this.status('Board outline set');
+    } else {
+      this.drawPts = [];
+    }
+  }
+
+  doPunchout(p, opt) {
+    if (!this.punchTarget) {
+      const t = opt.target;
+      if (t && t.pcb && t.pcb.t === 'pour') {
+        this.punchTarget = t;
+        this.status(`Pour "${t.pcb.label}" selected. Draw cutout, Enter to finish.`);
+      } else {
+        this.status('Click on a pour first');
+      }
+      return;
+    }
+    this.drawPts.push({x:p.x,y:p.y});
+    this.updatePrev(p);
+  }
+
+  // ===== POURS =====
+  pourTypeChanged() {
+    const t = el('pm-type').value;
+    el('pm-color').value = NET_COLORS[t] || '#44cc44';
+  }
+
+  confirmPour() {
+    const pts = this.pendingPourPts || [];
+    if (pts.length < 3) { this.cancelPour(); return; }
+    const label = el('pm-label').value || 'Pour', netType = el('pm-type').value;
+    const color = el('pm-color').value, opacity = parseInt(el('pm-opacity').value)/100;
+    this.pushUndo();
+    const id = this.genId();
+    const pourData = { id, t:'pour', points:[...pts], layer:this.layer, label, netType, color, opacity, cutouts:[] };
+    this.data.pours.push(pourData);
+    this.renderPour(pourData);
+    this.pendingPourPts = null;
+    el('pour-modal').classList.remove('show');
+    el('pm-label').value = '';
+    this.refreshUI();
+  }
+
+  cancelPour() { this.drawPts=[]; this.pendingPourPts=null; el('pour-modal').classList.remove('show'); }
+
+  renderPour(pd) {
+    const color = pd.color || NET_COLORS[pd.netType] || '#44cc44';
+    const opacity = pd.opacity || 0.25;
+    let path = 'M ' + pd.points.map(p => `${p.x} ${p.y}`).join(' L ') + ' Z';
+    (pd.cutouts || []).forEach(c => {
+      const rev = [...c.points].reverse();
+      path += ' M ' + rev.map(p => `${p.x} ${p.y}`).join(' L ') + ' Z';
+    });
+    const pathObj = new fabric.Path(path, {
+      fill: color, fillRule: 'evenodd', opacity: opacity,
+      stroke: color, strokeWidth: 1.5,
+      selectable: false, hasControls: false, evented: true,
+    });
+    pathObj.pcb = { ...pd, t:'pour' };
+    this.canvas.add(pathObj); this.canvas.sendToBack(pathObj);
+    const cx = pd.points.reduce((a,p)=>a+p.x,0)/pd.points.length;
+    const cy = pd.points.reduce((a,p)=>a+p.y,0)/pd.points.length;
+    const tx = new fabric.Text(pd.label, { left:cx, top:cy, fontSize:12, fill:color, fontFamily:'monospace', fontWeight:'bold', originX:'center', originY:'center', selectable:false, evented:false });
+    tx.pcb = { lf: pd.id };
+    this.canvas.add(tx);
+  }
+
+  rebuildPour(pd) {
+    this.canvas.getObjects().filter(o => o.pcb && (o.pcb.id === pd.id || o.pcb.lf === pd.id)).forEach(o => this.canvas.remove(o));
+    this.renderPour(pd);
+  }
+
+  // ===== ALIGNMENT (Full affine, mirror-aware, least-squares) =====
+  addAlignPt(p) {
+    const side = this.layer === 'bottom' ? 'bottom' : 'top';
+    const pts = this.data.alignPoints[side];
+    const idx = pts.length + 1;
+    const id = 'al_' + side[0] + '_' + idx;
+    const color = side === 'top' ? '#00ff00' : '#ff00ff';
+
+    const m = new fabric.Circle({ left:p.x, top:p.y, radius:8, fill:'transparent', stroke:color, strokeWidth:2, originX:'center', originY:'center', selectable:this.tool==='select', hasControls:false });
+    m.pcb = { id, t:'align', side, idx, x:p.x, y:p.y };
+    const c1 = new fabric.Line([p.x-12,p.y,p.x+12,p.y], { stroke:color, strokeWidth:1, selectable:false, evented:false });
+    const c2 = new fabric.Line([p.x,p.y-12,p.x,p.y+12], { stroke:color, strokeWidth:1, selectable:false, evented:false });
+    c1.pcb = { df: id }; c2.pcb = { df: id };
+    const lbl = new fabric.Text(`A${idx}(${side[0].toUpperCase()})`, { left:p.x+14, top:p.y-6, fontSize:10, fill:color, fontFamily:'monospace', selectable:false, evented:false });
+    lbl.pcb = { lf: id };
+
+    m.on('moving', () => {
+      m.pcb.x=m.left; m.pcb.y=m.top;
+      lbl.set({left:m.left+14,top:m.top-6});
+      c1.set({x1:m.left-12,y1:m.top,x2:m.left+12,y2:m.top});
+      c2.set({x1:m.left,y1:m.top-12,x2:m.left,y2:m.top+12});
+    });
+
+    this.canvas.add(m, c1, c2, lbl);
+    pts.push({ id, x:p.x, y:p.y });
+    const tc = this.data.alignPoints.top.length, bc = this.data.alignPoints.bottom.length;
+    this.status(`Align: ${tc}T / ${bc}B points. Need ≥2 matched pairs.`);
+  }
+
+  applyAlignment() {
+    const tp = this.data.alignPoints.top, bp = this.data.alignPoints.bottom;
+    const n = Math.min(tp.length, bp.length);
+    if (n < 2) { this.status('Need ≥2 matched alignment points on each layer'); return; }
+    if (!this.botImg) { this.status('No bottom image loaded'); return; }
+
+    // Get current positions (markers may have been dragged)
+    const getPos = (pts) => pts.map(p => {
+      const obj = this.findObj(p.id);
+      return obj ? { x: obj.left, y: obj.top } : { x: p.x, y: p.y };
+    });
+    const topPts = getPos(tp).slice(0, n);
+    const botPts = getPos(bp).slice(0, n);
+
+    // PCB bottom is viewed as a horizontal mirror of the top.
+    // We need to find an affine transform (with reflection) that maps
+    // bottom image coordinates → top image coordinates.
+    //
+    // Full affine least squares:
+    //   topX_i = a*botX_i + b*botY_i + e
+    //   topY_i = c*botX_i + d*botY_i + f
+    //
+    // Solve as two independent 3-parameter regressions.
+
+    // Build normal equations: A^T A x = A^T b  for 3x3 system
+    let sxx=0, syy=0, sxy=0, sx=0, sy=0;
+    let stx=0, sty=0, sxtx=0, sytx=0, sxty=0, syty=0;
+    for (let i = 0; i < n; i++) {
+      const bx = botPts[i].x, by = botPts[i].y;
+      const ttx = topPts[i].x, tty = topPts[i].y;
+      sxx += bx*bx; syy += by*by; sxy += bx*by;
+      sx += bx; sy += by;
+      stx += ttx; sty += tty;
+      sxtx += bx*ttx; sytx += by*ttx;
+      sxty += bx*tty; syty += by*tty;
+    }
+
+    // Normal equations matrix (same for both X and Y regressions):
+    // [sxx sxy sx] [a]   [sxtx]   or   [sxty]
+    // [sxy syy sy] [b] = [sytx]   or   [syty]
+    // [sx  sy  n ] [e]   [stx ]   or   [sty ]
+
+    const det3 = (m) => {
+      return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])
+           - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])
+           + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+    };
+
+    const M = [[sxx,sxy,sx],[sxy,syy,sy],[sx,sy,n]];
+    const D = det3(M);
+    if (Math.abs(D) < 1e-10) { this.status('Alignment failed — points are degenerate'); return; }
+
+    // Solve for [a, b, e] (X regression)
+    const Rx = [sxtx, sytx, stx];
+    const solve = (M, R) => {
+      const D = det3(M);
+      const D0 = det3([[R[0],M[0][1],M[0][2]],[R[1],M[1][1],M[1][2]],[R[2],M[2][1],M[2][2]]]);
+      const D1 = det3([[M[0][0],R[0],M[0][2]],[M[1][0],R[1],M[1][2]],[M[2][0],R[2],M[2][2]]]);
+      const D2 = det3([[M[0][0],M[0][1],R[0]],[M[1][0],M[1][1],R[1]],[M[2][0],M[2][1],R[2]]]);
+      return [D0/D, D1/D, D2/D];
+    };
+
+    const [a, b, e] = solve(M, Rx);
+    const Ry = [sxty, syty, sty];
+    const [c, d, f] = solve(M, Ry);
+
+    // Now we have the affine: topX = a*botX + b*botY + e
+    //                          topY = c*botX + d*botY + f
+    //
+    // Decompose [[a,b],[c,d]] into Fabric.js properties.
+    // det < 0 means reflection (expected for flipped board).
+
+    const det = a*d - b*c;
+    const hasReflection = det < 0;
+
+    // For Fabric.js, we'll set the transform directly using the image's
+    // transformMatrix. But Fabric v5 doesn't support arbitrary matrices easily.
+    //
+    // Alternative: decompose into flipX + scale + rotation + translation.
+    //
+    // If reflected: first flip X (negate column 1), then decompose as rotation+scale.
+    let aa = a, bb = b, cc = c, dd = d;
+    if (hasReflection) {
+      // Absorb the reflection by negating column 1
+      aa = -a; cc = -c;
+    }
+
+    // Now [[aa,bb],[cc,dd]] should be a rotation*scale matrix (det > 0)
+    const scaleX = Math.sqrt(aa*aa + cc*cc);
+    const scaleY = Math.sqrt(bb*bb + dd*dd);
+    const angle = Math.atan2(cc, aa); // radians
+
+    // Apply to bottom image
+    this.botImg.set({
+      flipX: hasReflection,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      angle: angle * 180 / Math.PI,
+      left: 0,
+      top: 0,
+      originX: 'left',
+      originY: 'top',
+    });
+    this.botImg.setCoords();
+
+    // Now compute where (0,0) of the original bottom image maps to.
+    // With flipX, Fabric mirrors around the object's center after scaling,
+    // but we need to compensate using the affine translation.
+    //
+    // The affine says: top_coords = [a,b;c,d] * bot_coords + [e;f]
+    // So bot_coords (0,0) maps to (e, f).
+    // But Fabric's own transform chain means left/top need adjustment.
+    //
+    // For a non-flipped image at origin with the computed scale+rotation,
+    // pixel (0,0) stays at (left,top). So we need left=e, top=f... almost.
+    //
+    // With flipX, pixel (0,0) in the original image becomes pixel (W,0) visually.
+    // So we need to offset by the image width * scaleX.
+
+    if (hasReflection) {
+      // With flipX, the image's left edge is actually its right edge.
+      // Fabric renders flipX by negating scaleX internally, so the
+      // "left" position corresponds to what was the right edge.
+      // We need: the point that was (0,0) in the original image to map to (e,f).
+      // With flipX, (0,0) original → rendered at (left + width*scaleX, top)
+      // So: left + width*scaleX = e  → left = e - width*scaleX
+      // But rotation complicates this. Let's use a reference point approach.
+
+      // Place image at (0,0), get where bot point 0 renders, then offset.
+      this.botImg.set({ left: 0, top: 0 });
+      this.botImg.setCoords();
+      this.canvas.requestRenderAll();
+
+      // Expected position of bot point 0 in top coords
+      const expX = a * botPts[0].x + b * botPts[0].y + e;
+      const expY = c * botPts[0].x + d * botPts[0].y + f;
+
+      // Where does bot point 0 actually appear with current transform?
+      // The transform maps original pixel coords through flipX+scale+rotate+translate.
+      // Use Fabric's built-in coordinate mapping... or just compute it manually.
+
+      // With Fabric: the image treats (left,top) as anchor.
+      // For a flipped image, pixel (bx, by) renders at:
+      //   rx = left + cos(θ)*(W*sx - bx*sx) - sin(θ)*(by*sy)
+      //   ry = top  + sin(θ)*(W*sx - bx*sx) + cos(θ)*(by*sy)
+      // where sx=scaleX, sy=scaleY, W=image width
+
+      const W = this.botImg.width;
+      const cosA = Math.cos(angle), sinA = Math.sin(angle);
+      const bx0 = botPts[0].x, by0 = botPts[0].y;
+      const rxRel = cosA*(W*scaleX - bx0*scaleX) - sinA*(by0*scaleY);
+      const ryRel = sinA*(W*scaleX - bx0*scaleX) + cosA*(by0*scaleY);
+
+      this.botImg.set({
+        left: expX - rxRel,
+        top: expY - ryRel,
+      });
+    } else {
+      // No reflection: pixel (bx,by) renders at:
+      //   rx = left + cos(θ)*bx*sx - sin(θ)*by*sy
+      //   ry = top  + sin(θ)*bx*sx + cos(θ)*by*sy
+      const cosA = Math.cos(angle), sinA = Math.sin(angle);
+      const bx0 = botPts[0].x, by0 = botPts[0].y;
+      const rxRel = cosA*bx0*scaleX - sinA*by0*scaleY;
+      const ryRel = sinA*bx0*scaleX + cosA*by0*scaleY;
+      const expX = a*bx0 + b*by0 + e;
+      const expY = c*bx0 + d*by0 + f;
+      this.botImg.set({
+        left: expX - rxRel,
+        top: expY - ryRel,
+      });
+    }
+
+    this.botImg.setCoords();
+    this.canvas.requestRenderAll();
+
+    // Compute alignment error
+    let totalErr = 0;
+    for (let i = 0; i < n; i++) {
+      const px = a*botPts[i].x + b*botPts[i].y + e;
+      const py = c*botPts[i].x + d*botPts[i].y + f;
+      totalErr += Math.hypot(px - topPts[i].x, py - topPts[i].y);
+    }
+    const avgErr = totalErr / n;
+
+    this.status(`Aligned: ${hasReflection?'mirrored + ':''}scale=${scaleX.toFixed(3)}/${scaleY.toFixed(3)}, rot=${(angle*180/Math.PI).toFixed(1)}°, avg error=${avgErr.toFixed(1)}px`);
+  }
+
+  flipBottom() {
+    if (!this.botImg) { this.status('No bottom image'); return; }
+    this.botImg.set('flipX', !this.botImg.flipX);
+    this.canvas.requestRenderAll();
+  }
+
+  // ===== IMAGES =====
+  loadImage(ev, side) {
+    const f = ev.target.files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      fabric.Image.fromURL(e.target.result, (img) => {
+        img.set({ left:0, top:0, selectable:false, evented:false, opacity:0.85 });
+        img.pcb = { t:'img', side };
+        this.canvas.getObjects().filter(o => o.pcb && o.pcb.t === 'img' && o.pcb.side === side).forEach(o => this.canvas.remove(o));
+        if (side === 'top') this.topImg = img; else this.botImg = img;
+        this.canvas.add(img); this.canvas.sendToBack(img);
+        if (this.topImg && this.botImg) { this.canvas.sendToBack(this.botImg); this.canvas.sendToBack(this.topImg); }
+        this.updateLayers();
+        const z = Math.min(this.canvas.width/img.width, this.canvas.height/img.height) * 0.85;
+        if (!this.topImg || !this.botImg || side === 'top') { this.canvas.setZoom(z); this.zoom=z; el('zoom-display').textContent = Math.round(z*100)+'%'; }
+      });
+    };
+    reader.readAsDataURL(f);
+    ev.target.value = '';
+  }
+
+  updateLayers() {
+    const s = this.layer;
+    if (this.topImg) this.topImg.set('visible', s==='top'||s==='both');
+    if (this.botImg) { this.botImg.set('visible', s==='bottom'||s==='both'); this.botImg.set('opacity', s==='both'?0.4:0.85); }
+
+    // Show/hide layer-specific objects
+    // Through-board items (vias, holes, pins) always visible. Traces/pours/components/SMDs filter by layer.
+    const throughTypes = new Set(['via','hole']);
+    this.canvas.forEachObject(o => {
+      if (!o.pcb || o.pcb.t === 'img' || o.pcb.t === 'outline') return;
+      const oLayer = o.pcb.layer;
+      if (!oLayer) return; // no layer info — always show
+
+      // Through-board markers (vias, through-holes, pins) — always visible & fully interactive
+      if (o.pcb.t === 'pin' || (o.pcb.t === 'marker' && throughTypes.has(o.pcb.markerType))) {
+        o.set('visible', true);
+        o.set('opacity', 1);
+        return;
+      }
+
+      // Labels/net lines tied to through-board items — always visible
+      if (o.pcb.lf || o.pcb.df) {
+        const parentId = o.pcb.lf || o.pcb.df;
+        const parent = this.data.markers.find(m => m.id === parentId);
+        if (parent && (parent.t === 'pin' || throughTypes.has(parent.markerType))) {
+          o.set('visible', true);
+          o.set('opacity', 1);
+          return;
+        }
+      }
+
+      // Everything else: show only on matching layer
+      if (s === 'both') { o.set('visible', true); o.set('opacity', 1); }
+      else { o.set('visible', s === oLayer); }
+    });
+
+    this.canvas.requestRenderAll();
+  }
+
+  // ===== DELETE =====
+  delSelected() {
+    const active = this.canvas.getActiveObjects();
+    if (!active.length) return;
+    this.pushUndo();
+    active.forEach(o => { if (o.pcb) this.delById(o.pcb.id, true); else this.canvas.remove(o); });
+    this.canvas.discardActiveObject();
+    this.refreshUI();
+  }
+
+  delById(id, batch) {
+    if (!batch) this.pushUndo();
+    // If deleting a component, also delete its pins
+    const comp = this.data.components.find(c => c.id === id);
+    if (comp) {
+      const pinIds = this.data.markers.filter(m => m.t === 'pin' && m.parentId === id).map(m => m.id);
+      pinIds.forEach(pid => {
+        this.canvas.getObjects().filter(o => o.pcb && (o.pcb.id===pid || o.pcb.lf===pid)).forEach(o => this.canvas.remove(o));
+        // Also remove nets connected to this pin
+        this.canvas.getObjects().filter(o => o.pcb && o.pcb.t==='net' && (o.pcb.fromId===pid||o.pcb.toId===pid)).forEach(o => { this.data.nets=this.data.nets.filter(n=>n.id!==o.pcb.id); this.canvas.remove(o); });
+      });
+      this.data.markers = this.data.markers.filter(m => !(m.t === 'pin' && m.parentId === id));
+    }
+
+    this.canvas.getObjects().filter(o => o.pcb && (o.pcb.id===id || o.pcb.lf===id || o.pcb.df===id)).forEach(o => this.canvas.remove(o));
+    this.canvas.getObjects().filter(o => o.pcb && o.pcb.t==='net' && (o.pcb.fromId===id||o.pcb.toId===id)).forEach(o => { this.data.nets=this.data.nets.filter(n=>n.id!==o.pcb.id); this.canvas.remove(o); });
+    this.data.markers = this.data.markers.filter(m => m.id !== id);
+    this.data.components = this.data.components.filter(c => c.id !== id);
+    this.data.nets = this.data.nets.filter(n => n.id !== id);
+    this.data.traces = this.data.traces.filter(t => t.id !== id);
+    this.data.pours = this.data.pours.filter(p => p.id !== id);
+    this.canvas.requestRenderAll();
+    if (!batch) this.refreshUI();
+  }
+
+  // ===== PROPS =====
+  showProps(obj) {
+    const d = obj.pcb;
+    let h = `<label>ID</label><input value="${d.id}" readonly>`;
+    h += `<label>Type</label><input value="${d.t}" readonly>`;
+    if (d.label !== undefined) h += `<label>Label</label><input value="${d.label}" onchange="app.setProp('${d.id}','label',this.value)">`;
+    if (d.value !== undefined) h += `<label>Value</label><input value="${d.value}" onchange="app.setProp('${d.id}','value',this.value)">`;
+    if (d.markerType) h += `<label>Type</label><select onchange="app.setProp('${d.id}','markerType',this.value)"><option value="via" ${d.markerType==='via'?'selected':''}>Via</option><option value="hole" ${d.markerType==='hole'?'selected':''}>Through-Hole</option><option value="pad" ${d.markerType==='pad'?'selected':''}>Pad</option></select>`;
+    if (d.holeSize !== undefined) {
+      h += `<div class="prop-row"><label>Hole Size</label><input type="range" min="1" max="20" value="${d.holeSize}" oninput="app.setHoleSize('${d.id}',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${d.holeSize}px</span></div>`;
+    }
+    if (d.t === 'trace') {
+      const w = d.width || 3;
+      h += `<div class="prop-row"><label>Width</label><input type="range" min="1" max="20" value="${w}" oninput="app.setTraceWidth('${d.id}',this.value);this.nextElementSibling.textContent=this.value+'px'"><span class="prop-val">${w}px</span></div>`;
+    }
+    if (d.netType) h += `<label>Net Type</label><select onchange="app.setProp('${d.id}','netType',this.value)"><option value="power" ${d.netType==='power'?'selected':''}>Power</option><option value="ground" ${d.netType==='ground'?'selected':''}>Ground</option><option value="signal" ${d.netType==='signal'?'selected':''}>Signal</option><option value="other" ${d.netType==='other'?'selected':''}>Other</option></select>`;
+    h += `<label>Layer</label><input value="${d.layer||'—'}" readonly>`;
+
+    // Test Data section for components and markers
+    if (['component','marker','smd','pin'].includes(d.t)) {
+      const td = d.testData || {};
+      const ct = d.compType || d.markerType || '';
+      h += `<div style="margin-top:10px;border-top:1px solid #0f3460;padding-top:8px"><h3 style="color:#e94560;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔬 Test Data</h3>`;
+
+      // Component type selector for test fields
+      h += `<label>Test Type</label><select id="td-type" onchange="app.updateTestFields('${d.id}')">`;
+      h += `<option value="">— select —</option>`;
+      h += `<option value="cap" ${td._type==='cap'?'selected':''}>Capacitor</option>`;
+      h += `<option value="res" ${td._type==='res'?'selected':''}>Resistor</option>`;
+      h += `<option value="diode" ${td._type==='diode'?'selected':''}>Diode</option>`;
+      h += `<option value="mosfet" ${td._type==='mosfet'?'selected':''}>MOSFET</option>`;
+      h += `<option value="bjt" ${td._type==='bjt'?'selected':''}>BJT</option>`;
+      h += `<option value="inductor" ${td._type==='inductor'?'selected':''}>Inductor</option>`;
+      h += `<option value="zener" ${td._type==='zener'?'selected':''}>Zener</option>`;
+      h += `<option value="custom" ${td._type==='custom'?'selected':''}>Custom</option>`;
+      h += `</select>`;
+      h += `<div id="td-fields">`;
+      h += this.renderTestFields(d.id, td);
+      h += `</div>`;
+      h += `<label>Notes</label><textarea id="td-notes" rows="2" style="width:100%;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:4px;padding:4px;font-size:11px;resize:vertical" onchange="app.setTestNote('${d.id}',this.value)">${td.notes||''}</textarea>`;
+      h += `</div>`;
+    }
+
+    el('props').innerHTML = h;
+  }
+
+  renderTestFields(id, td) {
+    const type = td._type || '';
+    if (!type) return '<p style="color:#555;font-size:10px">Select a test type above</p>';
+
+    const field = (key, label, unit, placeholder) => {
+      const val = td[key] || '';
+      return `<div class="prop-row"><label>${label}</label><input style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:3px;padding:2px 4px;font-size:11px" value="${val}" placeholder="${placeholder||''}" onchange="app.setTestVal('${id}','${key}',this.value)"><span class="prop-val" style="min-width:20px">${unit||''}</span></div>`;
+    };
+
+    let h = '';
+    switch(type) {
+      case 'cap':
+        h += field('capacitance', 'Capacitance', '', '100µF');
+        h += field('esr', 'ESR', 'Ω', '0.5');
+        h += field('vloss', 'V Loss', '%', '2.3');
+        h += field('voltage', 'Rated V', 'V', '50');
+        h += field('leakage', 'Leakage', 'µA', '');
+        break;
+      case 'res':
+        h += field('resistance', 'Resistance', '', '22kΩ');
+        h += field('tolerance', 'Tolerance', '%', '5');
+        h += field('power', 'Power', 'W', '0.25');
+        break;
+      case 'diode':
+        h += field('vf', 'Vf (fwd)', 'V', '0.65');
+        h += field('vr', 'Vr (rev)', 'V', '');
+        h += field('ir', 'Ir (leak)', 'µA', '');
+        h += field('type', 'Type', '', 'Si/Ge/Schottky');
+        break;
+      case 'mosfet':
+        h += field('channel', 'Channel', '', 'N/P');
+        h += field('vgs_th', 'Vgs(th)', 'V', '2.5');
+        h += field('rds_on', 'Rds(on)', 'Ω', '0.1');
+        h += field('idss', 'Idss', 'mA', '');
+        h += field('vds_max', 'Vds max', 'V', '');
+        h += field('cgs', 'Cgs', '', '');
+        break;
+      case 'bjt':
+        h += field('polarity', 'Type', '', 'NPN/PNP');
+        h += field('hfe', 'hFE (β)', '', '150');
+        h += field('vbe', 'Vbe', 'V', '0.65');
+        h += field('vce_sat', 'Vce(sat)', 'V', '0.2');
+        h += field('ic_max', 'Ic max', 'mA', '');
+        break;
+      case 'inductor':
+        h += field('inductance', 'Inductance', '', '100µH');
+        h += field('dcr', 'DCR', 'Ω', '0.5');
+        h += field('isat', 'I(sat)', 'A', '');
+        break;
+      case 'zener':
+        h += field('vz', 'Vz', 'V', '5.1');
+        h += field('iz', 'Iz (test)', 'mA', '20');
+        h += field('zz', 'Zz', 'Ω', '');
+        h += field('power', 'Power', 'W', '0.5');
+        break;
+      case 'custom':
+        h += field('field1', 'Field 1', '', '');
+        h += field('field2', 'Field 2', '', '');
+        h += field('field3', 'Field 3', '', '');
+        h += field('field4', 'Field 4', '', '');
+        break;
+    }
+    // Pass/fail indicator
+    const status = td._status || '';
+    h += `<div class="prop-row" style="margin-top:4px"><label>Status</label><select style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;border-radius:3px;padding:2px;font-size:11px" onchange="app.setTestVal('${id}','_status',this.value)">`;
+    h += `<option value="">—</option>`;
+    h += `<option value="pass" ${status==='pass'?'selected':''}>✅ Pass</option>`;
+    h += `<option value="fail" ${status==='fail'?'selected':''}>❌ Fail</option>`;
+    h += `<option value="suspect" ${status==='suspect'?'selected':''}>⚠️ Suspect</option>`;
+    h += `<option value="untested" ${status==='untested'?'selected':''}>⬜ Untested</option>`;
+    h += `</select></div>`;
+    return h;
+  }
+
+  updateTestFields(id) {
+    const type = el('td-type').value;
+    const obj = this.findObj(id);
+    if (!obj) return;
+    if (!obj.pcb.testData) obj.pcb.testData = {};
+    obj.pcb.testData._type = type;
+    // Update data store
+    const md = this.data.markers.find(m => m.id === id);
+    if (md) { if (!md.testData) md.testData = {}; md.testData._type = type; }
+    const cd = this.data.components.find(c => c.id === id);
+    if (cd) { if (!cd.testData) cd.testData = {}; cd.testData._type = type; }
+    el('td-fields').innerHTML = this.renderTestFields(id, obj.pcb.testData);
+  }
+
+  setTestVal(id, key, val) {
+    const obj = this.findObj(id);
+    if (!obj) return;
+    if (!obj.pcb.testData) obj.pcb.testData = {};
+    obj.pcb.testData[key] = val;
+    // Sync to data store
+    const md = this.data.markers.find(m => m.id === id);
+    if (md) { if (!md.testData) md.testData = {}; md.testData[key] = val; }
+    const cd = this.data.components.find(c => c.id === id);
+    if (cd) { if (!cd.testData) cd.testData = {}; cd.testData[key] = val; }
+    // Update pin visual color based on status
+    if (key === '_status') {
+      const colors = { pass: '#00ff00', fail: '#ff0000', suspect: '#ffaa00', untested: '#888888' };
+      if (colors[val] && obj.set) {
+        obj.set('fill', colors[val] || '#fc0');
+        this.canvas.requestRenderAll();
+      }
+    }
+  }
+
+  setTestNote(id, val) {
+    this.setTestVal(id, 'notes', val);
+  }
+
+  setHoleSize(id, val) {
+    const v = parseInt(val);
+    const obj = this.findObj(id);
+    if (!obj) return;
+    obj.pcb.holeSize = v;
+    obj.set('radius', v);
+    // Update data
+    const md = this.data.markers.find(m => m.id === id);
+    if (md) md.holeSize = v;
+    this.canvas.requestRenderAll();
+  }
+
+  setTraceWidth(id, val) {
+    const v = parseInt(val);
+    const obj = this.findObj(id);
+    if (!obj) return;
+    obj.pcb.width = v;
+    obj.set('strokeWidth', v);
+    // Update data
+    const td = this.data.traces.find(t => t.id === id);
+    if (td) td.width = v;
+    this.lastTraceWidth = v;
+    this.canvas.requestRenderAll();
+  }
+
+  setProp(id, prop, val) {
+    this.pushUndo();
+    const obj = this.findObj(id);
+    if (!obj) return;
+    obj.pcb[prop] = val;
+    if (prop==='label') { const tx = this.findLabel(id); if (tx) tx.set('text', val); }
+    if (prop==='markerType') obj.set('fill', MARKER_COLORS[val]||'#ffaa00');
+    if (prop==='netType') obj.set('stroke', NET_COLORS[val]||'#4488ff');
+    this.canvas.requestRenderAll();
+    this.refreshUI();
+  }
+
+  // ===== HELPERS =====
+  findObj(id) { return this.canvas.getObjects().find(o => o.pcb && o.pcb.id === id); }
+  findLabel(id) { return this.canvas.getObjects().find(o => o.pcb && o.pcb.lf === id); }
+  status(s) { el('st-info').textContent = s || 'Ready'; }
+
+  refreshUI() {
+    el('cl-comp').innerHTML = this.data.components.map(c => {
+      const pinCount = this.data.markers.filter(m => m.t === 'pin' && m.parentId === c.id).length;
+      return `<li><span>${c.label} (${c.compType}, ${pinCount}/${c.pinCount} pins)</span><span class="x" onclick="app.delById('${c.id}')">✕</span></li>`;
+    }).join('');
+    el('cl-mark').innerHTML = this.data.markers.filter(m=>m.t!=='pin').map(m => `<li><span>${m.label}</span><span class="x" onclick="app.delById('${m.id}')">✕</span></li>`).join('');
+    el('cl-net').innerHTML = this.data.nets.map(n => {
+      const f=this.data.markers.find(m=>m.id===n.fromId), t=this.data.markers.find(m=>m.id===n.toId);
+      return `<li><span>${f?.label||'?'} ↔ ${t?.label||'?'}</span><span class="x" onclick="app.delById('${n.id}')">✕</span></li>`;
+    }).join('');
+    el('cl-pour').innerHTML = this.data.pours.map(p => `<li><span>${p.label} (${p.netType})</span><span class="x" onclick="app.delById('${p.id}')">✕</span></li>`).join('');
+    el('cl-trace').innerHTML = (this.data.traces||[]).map(t => `<li><span>Trace (${t.points.length}pts)</span><span class="x" onclick="app.delById('${t.id}')">✕</span></li>`).join('');
+  }
+
+  // ===== SAVE / LOAD =====
+  restore(json) {
+    this.data = JSON.parse(json);
+    this.canvas.getObjects().filter(o => !o.pcb || o.pcb.t !== 'img').forEach(o => this.canvas.remove(o));
+    this.rebuild();
+  }
+
+  rebuild() {
+    const d = this.data;
+
+    // Separate pins from other markers
+    const pins = d.markers.filter(m => m.t === 'pin');
+    const nonPins = d.markers.filter(m => m.t !== 'pin');
+
+    // Non-pin markers
+    nonPins.forEach(m => {
+      if (m.t === 'smd') this.addSMD(m.x, m.y, m);
+      else this.addMarker(m.x, m.y, m);
+    });
+
+    // Components (outline only, locked)
+    d.components.forEach(c => {
+      const b = c.bounds || {x1:0,y1:0,x2:80,y2:60};
+      // Don't add to data again — buildCompOutline pushes, so remove first
+      this.data.components = this.data.components.filter(x => x.id !== c.id);
+      this.buildCompOutline(b, c.id, c.label, c.compType, c.pinCount, c.value, c.layer);
+    });
+
+    // Pins (at their saved positions)
+    pins.forEach(p => {
+      const pin = new fabric.Circle({
+        left:p.x, top:p.y, radius:4, fill:'#fc0', stroke:'#fff', strokeWidth:1,
+        originX:'center', originY:'center', selectable:this.tool==='select', hasControls:false
+      });
+      pin.pcb = { ...p };
+      const pl = new fabric.Text(p.label || ('' + p.pinNum), {
+        left:p.x+8, top:p.y-6, fontSize:10, fill:'#fc0', fontFamily:'monospace',
+        selectable:false, evented:false
+      });
+      pl.pcb = { lf: p.id };
+      pin.on('moving', () => {
+        pl.set({left:pin.left+8, top:pin.top-6});
+        pin.pcb.x = pin.left; pin.pcb.y = pin.top;
+        this.updateNets(p.id);
+      });
+      this.canvas.add(pin, pl);
+    });
+
+    // Nets
+    d.nets.forEach(n => {
+      const f = d.markers.find(m=>m.id===n.fromId), t = d.markers.find(m=>m.id===n.toId);
+      if (f && t) this.buildNet(f, t, n);
+    });
+
+    // Traces
+    (d.traces||[]).forEach(t => {
+      if (!t.points || t.points.length < 2) return;
+      const pl = new fabric.Polyline([...t.points], { stroke:'#44ff88', strokeWidth:t.width||3, fill:'transparent', selectable:this.tool==='select', hasControls:false, strokeLineCap:'round', strokeLineJoin:'round' });
+      pl.pcb = { ...t };
+      this.canvas.add(pl);
+    });
+
+    // Pours
+    (d.pours||[]).forEach(p => { if (p.points?.length >= 3) this.renderPour(p); });
+
+    // Outline
+    if (d.outline?.length >= 3) {
+      const pg = new fabric.Polygon([...d.outline], { stroke:'#fff', strokeWidth:2, fill:'transparent', strokeDashArray:[8,4], selectable:false, evented:false, hasControls:false });
+      pg.pcb = { id: this.genId(), t:'outline', points:d.outline };
+      this.canvas.add(pg); this.canvas.sendToBack(pg);
+    }
+
+    // Align points
+    ['top','bottom'].forEach(side => {
+      (d.alignPoints[side]||[]).forEach((a,i) => {
+        const col = side==='top'?'#00ff00':'#ff00ff';
+        const m = new fabric.Circle({left:a.x,top:a.y,radius:8,fill:'transparent',stroke:col,strokeWidth:2,originX:'center',originY:'center',selectable:this.tool==='select',hasControls:false});
+        m.pcb = {id:a.id,t:'align',side,idx:i+1,x:a.x,y:a.y};
+        const c1 = new fabric.Line([a.x-12,a.y,a.x+12,a.y],{stroke:col,strokeWidth:1,selectable:false,evented:false});
+        const c2 = new fabric.Line([a.x,a.y-12,a.x,a.y+12],{stroke:col,strokeWidth:1,selectable:false,evented:false});
+        c1.pcb={df:a.id}; c2.pcb={df:a.id};
+        const lbl = new fabric.Text(`A${i+1}(${side[0].toUpperCase()})`,{left:a.x+14,top:a.y-6,fontSize:10,fill:col,fontFamily:'monospace',selectable:false,evented:false});
+        lbl.pcb={lf:a.id};
+        m.on('moving',()=>{ m.pcb.x=m.left;m.pcb.y=m.top; lbl.set({left:m.left+14,top:m.top-6}); c1.set({x1:m.left-12,y1:m.top,x2:m.left+12,y2:m.top}); c2.set({x1:m.left,y1:m.top-12,x2:m.left,y2:m.top+12}); });
+        this.canvas.add(m,c1,c2,lbl);
+      });
+    });
+
+    // Send images to back
+    if (this.topImg) this.canvas.sendToBack(this.topImg);
+    if (this.botImg) this.canvas.sendToBack(this.botImg);
+
+    this.canvas.requestRenderAll();
+    this.refreshUI();
+  }
+
+  syncPositions() {
+    this.canvas.getObjects().forEach(o => {
+      if (!o.pcb) return;
+      if (['marker','smd','pin','align'].includes(o.pcb.t)) { o.pcb.x = o.left; o.pcb.y = o.top; }
+    });
+    // Sync data.markers from canvas objects
+    this.data.markers.forEach(m => {
+      const obj = this.findObj(m.id);
+      if (obj) { m.x = obj.left; m.y = obj.top; }
+    });
+    ['top','bottom'].forEach(side => {
+      this.data.alignPoints[side].forEach(a => {
+        const obj = this.findObj(a.id);
+        if (obj) { a.x = obj.left; a.y = obj.top; }
+      });
+    });
+  }
+
+  async save() {
+    this.syncPositions();
+    // Deduplicate markers by id
+    const seenIds = new Set();
+    this.data.markers = this.data.markers.filter(m => { if (seenIds.has(m.id)) return false; seenIds.add(m.id); return true; });
+    const zip = new JSZip();
+    zip.file('project.json', JSON.stringify(this.data, null, 2));
+    if (this.topImg) { const src = this.topImg.getSrc?.(); if (src?.startsWith('data:')) { const p=src.split(','); const ext=(p[0].match(/:(.*?);/)?.[1]||'image/jpeg').split('/')[1]||'jpg'; zip.file('top.'+ext,p[1],{base64:true}); }}
+    if (this.botImg) { const src = this.botImg.getSrc?.(); if (src?.startsWith('data:')) { const p=src.split(','); const ext=(p[0].match(/:(.*?);/)?.[1]||'image/jpeg').split('/')[1]||'jpg'; zip.file('bottom.'+ext,p[1],{base64:true}); }}
+    this.status('Saving...');
+    const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pcb-project.pcbm'; a.click();
+    this.status('Saved as .pcbm');
+  }
+
+  loadProject(ev) {
+    const f = ev.target.files[0]; if (!f) return;
+    if (f.name.endsWith('.json')) {
+      const reader = new FileReader();
+      reader.onload = (e) => { try { this.importJSON(JSON.parse(e.target.result)); this.status('Loaded (JSON)'); } catch(err) { alert('Error: '+err.message); } };
+      reader.readAsText(f);
+    } else {
+      this.status('Loading...');
+      JSZip.loadAsync(f).then(async (zip) => {
+        const jf = zip.file('project.json');
+        if (!jf) { alert('No project.json'); return; }
+        const raw = JSON.parse(await jf.async('text'));
+        for (const side of ['top','bottom']) {
+          const match = Object.keys(zip.files).find(n => n.startsWith(side+'.'));
+          if (match) {
+            const imgData = await zip.file(match).async('base64');
+            const ext = match.split('.').pop();
+            const mime = ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg';
+            await new Promise(resolve => {
+              fabric.Image.fromURL(`data:${mime};base64,${imgData}`, (img) => {
+                img.set({left:0,top:0,selectable:false,evented:false,opacity:0.85});
+                img.pcb = {t:'img',side};
+                this.canvas.getObjects().filter(o=>o.pcb&&o.pcb.t==='img'&&o.pcb.side===side).forEach(o=>this.canvas.remove(o));
+                if(side==='top')this.topImg=img; else this.botImg=img;
+                this.canvas.add(img); this.canvas.sendToBack(img);
+                resolve();
+              });
+            });
+          }
+        }
+        if(this.topImg&&this.botImg){this.canvas.sendToBack(this.botImg);this.canvas.sendToBack(this.topImg);}
+        this.updateLayers();
+        const img = this.topImg||this.botImg;
+        if(img){const z=Math.min(this.canvas.width/img.width,this.canvas.height/img.height)*0.85; this.canvas.setZoom(z);this.zoom=z;el('zoom-display').textContent=Math.round(z*100)+'%';}
+        this.importJSON(raw);
+        this.status('Loaded (.pcbm)');
+      }).catch(err => alert('Error: '+err.message));
+    }
+    ev.target.value = '';
+  }
+
+  importJSON(raw) {
+    this.canvas.getObjects().filter(o=>!o.pcb||o.pcb.t!=='img').forEach(o=>this.canvas.remove(o));
+    this.data = {
+      components: (raw.components||[]).map(c=>({...c,t:'component'})),
+      markers: (raw.markers||[]).map(m=>({...m, t: m.type||m.t, holeSize: m.holeSize || undefined})).filter((m,i,a)=>a.findIndex(x=>x.id===m.id)===i),
+      nets: (raw.nets||[]).map(n=>({...n,t:'net'})),
+      traces: (raw.traces||[]).map(t=>({...t,t:'trace',layer:t.layer||'top'})),
+      pours: (raw.pours||[]).map(p=>({...p,t:'pour',layer:p.layer||'top',color:p.color||NET_COLORS[p.netType]||'#44cc44',opacity:p.opacity||0.25})),
+      alignPoints: raw.alignPoints||{top:[],bottom:[]},
+      outline: raw.outline||[],
+      idCounter: raw.idCounter||1,
+    };
+    this.rebuild();
+  }
+
+  exportMD() {
+    let md = '# PCB Netlist\n\n## Components\n| Label | Type | Pins | Value |\n|---|---|---|---|\n';
+    this.data.components.forEach(c => { md += `| ${c.label} | ${c.compType} | ${c.pinCount} | ${c.value||'—'} |\n`; });
+    md += '\n## Connections\n| From | To | Type |\n|---|---|---|\n';
+    this.data.nets.forEach(n => {
+      const f=this.data.markers.find(m=>m.id===n.fromId), t=this.data.markers.find(m=>m.id===n.toId);
+      md += `| ${f?.label||'?'} | ${t?.label||'?'} | ${n.netType} |\n`;
+    });
+    md += '\n## Pours\n';
+    this.data.pours.forEach(p => { md += `- **${p.label}** (${p.netType}) — ${p.points.length} vertices, ${(p.cutouts||[]).length} cutouts\n`; });
+
+    // Test data
+    const tested = this.data.markers.filter(m => m.testData && m.testData._type);
+    const testedComps = this.data.components.filter(c => c.testData && c.testData._type);
+    if (tested.length || testedComps.length) {
+      md += '\n## Test Results\n';
+      [...testedComps, ...tested].forEach(item => {
+        const td = item.testData;
+        const status = {pass:'✅',fail:'❌',suspect:'⚠️',untested:'⬜'}[td._status] || '—';
+        md += `\n### ${item.label} ${status}\n`;
+        md += `- Type: ${td._type}\n`;
+        Object.entries(td).forEach(([k,v]) => {
+          if (k.startsWith('_') || k === 'notes' || !v) return;
+          md += `- ${k}: ${v}\n`;
+        });
+        if (td.notes) md += `- Notes: ${td.notes}\n`;
+      });
+    }
+
+    const blob = new Blob([md], {type:'text/markdown'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pcb-netlist.md'; a.click();
+  }
+
+  // ===== RESISTOR CALCULATOR =====
+  updateResistorInputs() {
+    const bands = parseInt(el('res-bands').value);
+    const digitCount = bands === 5 ? 3 : 2;
+    let html = '';
+    for (let i = 0; i < digitCount; i++) {
+      html += `<div class="res-band-row"><label>Digit ${i+1}</label><select id="rb-d${i}" onchange="app.updateResistor()">`;
+      R_DIGIT_NAMES.forEach(n => { html += `<option value="${n}" style="background:${R_COLORS[n].hex};color:${R_COLORS[n].text}">${n} (${R_COLORS[n].val})</option>`; });
+      html += '</select></div>';
+    }
+    html += `<div class="res-band-row"><label>Multiplier</label><select id="rb-mul" onchange="app.updateResistor()">`;
+    R_MUL_NAMES.forEach(n => { const m = R_COLORS[n].mul; html += `<option value="${n}" style="background:${R_COLORS[n].hex};color:${R_COLORS[n].text}">${n} (×${m})</option>`; });
+    html += '</select></div>';
+    html += `<div class="res-band-row"><label>Tolerance</label><select id="rb-tol" onchange="app.updateResistor()">`;
+    R_TOL_NAMES.forEach(n => { html += `<option value="${n}" style="background:${R_COLORS[n].hex};color:${R_COLORS[n].text}">${n} (${R_COLORS[n].tol})</option>`; });
+    html += '</select></div>';
+    el('res-inputs').innerHTML = html;
+    this.updateResistor();
+  }
+
+  updateResistor() {
+    const bands = parseInt(el('res-bands').value);
+    const digitCount = bands === 5 ? 3 : 2;
+    let val = 0;
+    const bandColors = [];
+    for (let i = 0; i < digitCount; i++) {
+      const sel = el('rb-d' + i); if (!sel) return;
+      val = val * 10 + R_COLORS[sel.value].val;
+      bandColors.push(R_COLORS[sel.value].hex);
+    }
+    const mulSel = el('rb-mul'), tolSel = el('rb-tol');
+    if (!mulSel || !tolSel) return;
+    val *= R_COLORS[mulSel.value].mul;
+    bandColors.push(R_COLORS[mulSel.value].hex);
+    bandColors.push(R_COLORS[tolSel.value].hex);
+    let display;
+    if (val >= 1e6) display = (val/1e6).toFixed(val%1e6?1:0) + 'MΩ';
+    else if (val >= 1e3) display = (val/1e3).toFixed(val%1e3?1:0) + 'kΩ';
+    else display = val.toFixed(val<1?2:0) + 'Ω';
+    display += ' ' + R_COLORS[tolSel.value].tol;
+    el('res-result').textContent = display;
+    let vis = '<div style="width:20px;height:10px;background:#c4a67a;border-radius:0 3px 3px 0"></div><div class="res-body">';
+    bandColors.forEach(c => { vis += `<div class="res-band" style="background:${c}"></div>`; });
+    vis += '</div><div style="width:20px;height:10px;background:#c4a67a;border-radius:3px 0 0 3px"></div>';
+    el('res-visual').innerHTML = vis;
+  }
+
+  // ===== 3D VIEWER =====
+  open3D() {
+    this.syncPositions();
+    const v = el('viewer3d');
+    v.style.display = 'block';
+
+    // Clean up previous renderer
+    if (this._3dRenderer) {
+      v.removeChild(this._3dRenderer.domElement);
+      this._3dRenderer.dispose();
+    }
+
+    const W = window.innerWidth, H = window.innerHeight;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    const camera = new THREE.PerspectiveCamera(50, W/H, 0.1, 10000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(W, H);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    v.insertBefore(renderer.domElement, v.firstChild);
+    this._3dRenderer = renderer;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0x404050, 0.6));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+    dl.position.set(200, 500, 300);
+    scene.add(dl);
+    const dl2 = new THREE.DirectionalLight(0x8888ff, 0.3);
+    dl2.position.set(-200, -300, 100);
+    scene.add(dl2);
+
+    // Determine board bounds
+    // Priority: 1) explicit outline, 2) alignment corner points, 3) all markers/components
+    let bx1, by1, bx2, by2;
+    if (this.data.outline && this.data.outline.length >= 3) {
+      bx1 = Math.min(...this.data.outline.map(p => p.x));
+      by1 = Math.min(...this.data.outline.map(p => p.y));
+      bx2 = Math.max(...this.data.outline.map(p => p.x));
+      by2 = Math.max(...this.data.outline.map(p => p.y));
+    } else if (this.data.alignPoints.top.length >= 4) {
+      // Use top-side alignment points as board extent (they mark physical features)
+      const ap = this.data.alignPoints.top;
+      bx1 = Math.min(...ap.map(p => p.x)) - 10;
+      by1 = Math.min(...ap.map(p => p.y)) - 10;
+      bx2 = Math.max(...ap.map(p => p.x)) + 10;
+      by2 = Math.max(...ap.map(p => p.y)) + 10;
+    } else {
+      // Fallback: use all markers/components
+      const allPts = [...this.data.markers.filter(m=>m.t!=='align').map(m => ({x:m.x,y:m.y}))];
+      this.data.components.forEach(c => { if(c.bounds){allPts.push({x:c.bounds.x1,y:c.bounds.y1},{x:c.bounds.x2,y:c.bounds.y2});} });
+      if (allPts.length < 2) { bx1=0;by1=0;bx2=500;by2=300; }
+      else { bx1=Math.min(...allPts.map(p=>p.x))-20; by1=Math.min(...allPts.map(p=>p.y))-20; bx2=Math.max(...allPts.map(p=>p.x))+20; by2=Math.max(...allPts.map(p=>p.y))+20; }
+    }
+
+    const bw = bx2-bx1, bh = by2-by1;
+    const cx = (bx1+bx2)/2, cy = (by1+by2)/2;
+    const scale = 1; // 1 canvas px = 1 3D unit
+    const boardThickness = Math.max(bw, bh) * 0.015;
+    const copperThick = boardThickness * 0.05;
+    const compHeight = boardThickness * 0.3;
+
+    // Board substrate (green PCB)
+    let boardShape;
+    if (this.data.outline && this.data.outline.length >= 3) {
+      boardShape = new THREE.Shape();
+      const op = this.data.outline;
+      boardShape.moveTo(op[0].x - cx, op[0].y - cy);
+      for (let i = 1; i < op.length; i++) boardShape.lineTo(op[i].x - cx, op[i].y - cy);
+      boardShape.closePath();
+    } else if (this.data.alignPoints.top.length >= 4) {
+      // Use the 4 outermost alignment points as board corners
+      const ap = this.data.alignPoints.top;
+      const sorted = [...ap].sort((a,b) => a.y - b.y);
+      const topTwo = sorted.slice(0,2).sort((a,b) => a.x - b.x);
+      const botTwo = sorted.slice(-2).sort((a,b) => a.x - b.x);
+      // Use bounding rect from alignment points
+      boardShape = new THREE.Shape();
+      boardShape.moveTo(bx1-cx, by1-cy);
+      boardShape.lineTo(bx2-cx, by1-cy);
+      boardShape.lineTo(bx2-cx, by2-cy);
+      boardShape.lineTo(bx1-cx, by2-cy);
+      boardShape.closePath();
+    } else {
+      boardShape = new THREE.Shape();
+      boardShape.moveTo(-bw/2, -bh/2);
+      boardShape.lineTo(bw/2, -bh/2);
+      boardShape.lineTo(bw/2, bh/2);
+      boardShape.lineTo(-bw/2, bh/2);
+      boardShape.closePath();
+    }
+
+    const boardGeo = new THREE.ExtrudeGeometry(boardShape, { depth: boardThickness, bevelEnabled: false });
+    const boardMat = new THREE.MeshPhongMaterial({ color: 0x0a5c0a, specular: 0x114411, shininess: 30 });
+    const boardMesh = new THREE.Mesh(boardGeo, boardMat);
+    boardMesh.rotation.x = -Math.PI / 2;
+    boardMesh.position.y = -boardThickness / 2;
+    scene.add(boardMesh);
+
+    // Copper materials
+    const copperMat = new THREE.MeshPhongMaterial({ color: 0xb87333, specular: 0xffcc88, shininess: 60 });
+    const copperDarkMat = new THREE.MeshPhongMaterial({ color: 0x8B6914, specular: 0xaa8844, shininess: 40 });
+    const silkMat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x222222 });
+    const holeMat = new THREE.MeshPhongMaterial({ color: 0xc0c0c0, specular: 0xffffff, shininess: 80 });
+    const icMat = new THREE.MeshPhongMaterial({ color: 0x222222, specular: 0x444444, shininess: 20 });
+    const capMat = new THREE.MeshPhongMaterial({ color: 0x333366 });
+    const resMat = new THREE.MeshPhongMaterial({ color: 0xc4a67a });
+
+    // Traces (copper strips on top)
+    (this.data.traces || []).forEach(t => {
+      if (!t.points || t.points.length < 2) return;
+      const w = (t.width || 3) * 0.8;
+      const yPos = boardThickness/2 + copperThick/2;
+      for (let i = 0; i < t.points.length - 1; i++) {
+        const p1 = t.points[i], p2 = t.points[i+1];
+        const dx = p2.x-p1.x, dy = p2.y-p1.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.1) continue;
+        // Trace segment
+        const geo = new THREE.BoxGeometry(len + w, copperThick, w);
+        const mesh = new THREE.Mesh(geo, copperMat);
+        const mx = (p1.x+p2.x)/2 - cx, my = (p1.y+p2.y)/2 - cy;
+        mesh.position.set(mx, yPos, -my);
+        mesh.rotation.y = Math.atan2(dy, dx);
+        scene.add(mesh);
+      }
+      // Joint dots at each point
+      t.points.forEach(p => {
+        const dotGeo = new THREE.CylinderGeometry(w/2, w/2, copperThick, 8);
+        const dot = new THREE.Mesh(dotGeo, copperMat);
+        dot.position.set(p.x - cx, yPos, -(p.y - cy));
+        scene.add(dot);
+      });
+    });
+
+    // Pours (copper planes)
+    (this.data.pours || []).forEach(p => {
+      if (!p.points || p.points.length < 3) return;
+      const shape = new THREE.Shape();
+      shape.moveTo(p.points[0].x - cx, p.points[0].y - cy);
+      for (let i = 1; i < p.points.length; i++) shape.lineTo(p.points[i].x - cx, p.points[i].y - cy);
+      shape.closePath();
+      // Add holes
+      (p.cutouts || []).forEach(c => {
+        if (c.points.length < 3) return;
+        const hole = new THREE.Path();
+        const rp = [...c.points].reverse();
+        hole.moveTo(rp[0].x - cx, rp[0].y - cy);
+        for (let i = 1; i < rp.length; i++) hole.lineTo(rp[i].x - cx, rp[i].y - cy);
+        hole.closePath();
+        shape.holes.push(hole);
+      });
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: copperThick, bevelEnabled: false });
+      const mesh = new THREE.Mesh(geo, copperDarkMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = boardThickness / 2;
+      scene.add(mesh);
+    });
+
+    // Markers (vias/through-holes) — skip alignment points and pins
+    this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align').forEach(m => {
+      const r = (m.holeSize || (m.markerType === 'hole' ? 8 : 4)) * 0.6;
+      const geo = new THREE.CylinderGeometry(r, r, boardThickness * 1.3, 12);
+      const mesh = new THREE.Mesh(geo, holeMat);
+      mesh.position.set(m.x - cx, 0, -(m.y - cy));
+      scene.add(mesh);
+      // Annular ring
+      const ringGeo = new THREE.CylinderGeometry(r*1.5, r*1.5, copperThick, 12);
+      const ringTop = new THREE.Mesh(ringGeo, copperMat);
+      ringTop.position.set(m.x - cx, boardThickness/2 + copperThick/2, -(m.y - cy));
+      scene.add(ringTop);
+    });
+
+    // Pins
+    this.data.markers.filter(m => m.t === 'pin').forEach(m => {
+      const geo = new THREE.CylinderGeometry(2, 2, boardThickness * 1.8, 8);
+      const mesh = new THREE.Mesh(geo, holeMat);
+      mesh.position.set(m.x - cx, 0, -(m.y - cy));
+      scene.add(mesh);
+      // Pad on top
+      const padGeo = new THREE.CylinderGeometry(4, 4, copperThick, 8);
+      const pad = new THREE.Mesh(padGeo, copperMat);
+      pad.position.set(m.x - cx, boardThickness/2 + copperThick/2, -(m.y - cy));
+      scene.add(pad);
+    });
+
+    // Components (3D bodies)
+    this.data.components.forEach(c => {
+      if (!c.bounds) return;
+      const b = c.bounds;
+      const w = b.x2-b.x1, h = b.y2-b.y1;
+      const mx = (b.x1+b.x2)/2 - cx, my = (b.y1+b.y2)/2 - cy;
+
+      let bodyH, mat;
+      switch(c.compType) {
+        case 'ic': bodyH = compHeight * 2; mat = icMat; break;
+        case 'cap': bodyH = compHeight * 3; mat = capMat; break;
+        case 'res': bodyH = compHeight * 1.5; mat = resMat; break;
+        default: bodyH = compHeight; mat = icMat;
+      }
+
+      const geo = new THREE.BoxGeometry(w, bodyH, h);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(mx, boardThickness/2 + bodyH/2, -my);
+      scene.add(mesh);
+
+      // Label on top (using a small plane with canvas texture)
+      const canvas2d = document.createElement('canvas');
+      canvas2d.width = 256; canvas2d.height = 64;
+      const ctx = canvas2d.getContext('2d');
+      ctx.fillStyle = c.compType === 'ic' ? '#ffffff' : '#000000';
+      ctx.font = 'bold 28px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(c.label, 128, 40);
+      const tex = new THREE.CanvasTexture(canvas2d);
+      const labelGeo = new THREE.PlaneGeometry(w * 0.8, h * 0.3);
+      const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+      labelMesh.rotation.x = -Math.PI / 2;
+      labelMesh.position.set(mx, boardThickness/2 + bodyH + 0.5, -my);
+      scene.add(labelMesh);
+    });
+
+    // Camera position
+    const maxDim = Math.max(bw, bh);
+    camera.position.set(0, maxDim * 0.8, maxDim * 0.6);
+    camera.lookAt(0, 0, 0);
+
+    // Orbit controls (manual implementation since we don't have OrbitControls)
+    let isDragging = false, isRightDrag = false, lastX = 0, lastY = 0;
+    let theta = Math.PI * 0.3, phi = Math.PI * 0.25, dist = maxDim * 1.0;
+    let panX = 0, panZ = 0;
+
+    const updateCam = () => {
+      camera.position.set(
+        panX + dist * Math.sin(theta) * Math.cos(phi),
+        dist * Math.sin(phi),
+        panZ + dist * Math.cos(theta) * Math.cos(phi)
+      );
+      camera.lookAt(panX, 0, panZ);
+    };
+    updateCam();
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      isRightDrag = e.button === 2;
+      lastX = e.clientX; lastY = e.clientY;
+      e.preventDefault();
+    });
+    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (isRightDrag) {
+        panX -= dx * dist * 0.001;
+        panZ -= dy * dist * 0.001;
+      } else {
+        theta -= dx * 0.005;
+        phi = Math.max(0.05, Math.min(Math.PI * 0.49, phi + dy * 0.005));
+      }
+      lastX = e.clientX; lastY = e.clientY;
+      updateCam();
+    });
+    renderer.domElement.addEventListener('mouseup', () => isDragging = false);
+    renderer.domElement.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      dist *= e.deltaY > 0 ? 1.1 : 0.9;
+      dist = Math.max(maxDim * 0.1, Math.min(maxDim * 5, dist));
+      updateCam();
+    });
+
+    // Animation loop
+    this._3dRunning = true;
+    const animate = () => {
+      if (!this._3dRunning) return;
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Handle resize
+    this._3dResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+    window.addEventListener('resize', this._3dResize);
+  }
+
+  // ===== GERBER RS-274X EXPORT ENGINE =====
+  async exportGerber() {
+    this.syncPositions();
+    // Deduplicate markers
+    const seen = new Set();
+    this.data.markers = this.data.markers.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+
+    // Compute board bounds (in canvas pixel coords)
+    const outline = this.data.outline;
+    let bx1, by1, bx2, by2;
+    if (outline && outline.length >= 3) {
+      bx1 = Math.min(...outline.map(p=>p.x)); by1 = Math.min(...outline.map(p=>p.y));
+      bx2 = Math.max(...outline.map(p=>p.x)); by2 = Math.max(...outline.map(p=>p.y));
+    } else if (this.data.alignPoints.top.length >= 4) {
+      const ap = this.data.alignPoints.top;
+      bx1 = Math.min(...ap.map(p=>p.x)); by1 = Math.min(...ap.map(p=>p.y));
+      bx2 = Math.max(...ap.map(p=>p.x)); by2 = Math.max(...ap.map(p=>p.y));
+    } else {
+      const allPts = [...this.data.markers.filter(m=>m.t!=='align').map(m=>({x:m.x,y:m.y}))];
+      this.data.components.forEach(c => { if(c.bounds){allPts.push({x:c.bounds.x1,y:c.bounds.y1},{x:c.bounds.x2,y:c.bounds.y2});} });
+      if (!allPts.length) { alert('No board data to export'); return; }
+      bx1=Math.min(...allPts.map(p=>p.x))-10; by1=Math.min(...allPts.map(p=>p.y))-10;
+      bx2=Math.max(...allPts.map(p=>p.x))+10; by2=Math.max(...allPts.map(p=>p.y))+10;
+    }
+    const bwPx = bx2 - bx1, bhPx = by2 - by1;
+
+    // Ask user for physical board width
+    const boardWidthMM = parseFloat(prompt(`Board width in mm?\n(Pixel width: ${Math.round(bwPx)}px)\n\nEnter actual board width for accurate Gerber output:`, '100'));
+    if (!boardWidthMM || isNaN(boardWidthMM)) { this.status('Export cancelled'); return; }
+    const px2mm = boardWidthMM / bwPx;
+    const boardHeightMM = bhPx * px2mm;
+
+    // Transform: zero-reference to board origin + flip Y axis
+    // Canvas: Y increases downward. Gerber: Y increases upward.
+    // gX = (canvasX - bx1) * px2mm
+    // gY = (by2 - canvasY) * px2mm  (flip Y)
+    const gCoord = (mm) => Math.round(mm * 1000000); // 3.6 format: nm
+    const gX = (cx) => gCoord((cx - bx1) * px2mm);
+    const gY = (cy) => gCoord((by2 - cy) * px2mm);
+    const gXY = (x, y) => `X${gX(x)}Y${gY(y)}`;
+
+    // Drill coordinates (Excellon uses mm directly, also zero-referenced + Y-flipped)
+    const dX = (cx) => ((cx - bx1) * px2mm).toFixed(3);
+    const dY = (cy) => ((by2 - cy) * px2mm).toFixed(3);
+
+    const gerberHdr = (name, fileFunc) => {
+      let h = `G04 PCB Mapper v5 - ${name}*\n`;
+      h += `G04 ${new Date().toISOString()}*\n`;
+      h += `G04 Scale: 1px = ${px2mm.toFixed(6)}mm*\n`;
+      // Gerber X2 file attributes (required by JLCPCB and modern fabs)
+      h += `%TF.GenerationSoftware,PCBMapper,v5*%\n`;
+      if (fileFunc) h += `%TF.FileFunction,${fileFunc}*%\n`;
+      h += '%FSLAX36Y36*%\n';
+      h += '%MOMM*%\n';
+      h += '%LPD*%\n';
+      h += 'G01*\n'; // Linear interpolation mode (explicit)
+      return h;
+    };
+
+    // ─── COPPER TOP (.gtl) ───
+    let gtl = gerberHdr('Copper Top', 'Copper,L1,Top');
+    let apIdx = 10;
+    const traceAps = {};
+    const traceWidths = new Set();
+    (this.data.traces||[]).forEach(t => traceWidths.add(t.width||3));
+    for (const w of traceWidths) {
+      const d = (w * px2mm).toFixed(4);
+      traceAps[w] = apIdx;
+      gtl += `%ADD${apIdx}C,${d}*%\n`;
+      apIdx++;
+    }
+    const pinPadD = (8 * px2mm).toFixed(4);
+    gtl += `%ADD${apIdx}C,${pinPadD}*%\n`;
+    const pinPadAp = apIdx++;
+    const viaRingD = (12 * px2mm).toFixed(4);
+    gtl += `%ADD${apIdx}C,${viaRingD}*%\n`;
+    const viaRingAp = apIdx++;
+    const holeRingD = (24 * px2mm).toFixed(4);
+    gtl += `%ADD${apIdx}C,${holeRingD}*%\n`;
+    const holeRingAp = apIdx++;
+    gtl += '\n';
+
+    // Draw traces
+    (this.data.traces||[]).forEach(t => {
+      if (!t.points || t.points.length < 2) return;
+      const ap = traceAps[t.width||3];
+      gtl += `D${ap}*\n`;
+      gtl += `${gXY(t.points[0].x, t.points[0].y)}D02*\n`;
+      for (let i = 1; i < t.points.length; i++)
+        gtl += `${gXY(t.points[i].x, t.points[i].y)}D01*\n`;
+    });
+
+    // Flash pin pads
+    const pins = this.data.markers.filter(m => m.t === 'pin');
+    if (pins.length) {
+      gtl += `D${pinPadAp}*\n`;
+      pins.forEach(m => { gtl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+
+    // Flash via annular rings
+    const vias = this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align' && (m.markerType === 'via' || (!m.markerType)));
+    if (vias.length) {
+      gtl += `D${viaRingAp}*\n`;
+      vias.forEach(m => { gtl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+
+    // Flash hole annular rings
+    const holes = this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align' && m.markerType === 'hole');
+    if (holes.length) {
+      gtl += `D${holeRingAp}*\n`;
+      holes.forEach(m => { gtl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+
+    // Pour regions (G36/G37)
+    (this.data.pours||[]).forEach(p => {
+      if (!p.points || p.points.length < 3) return;
+      gtl += 'G36*\n';
+      gtl += `${gXY(p.points[0].x, p.points[0].y)}D02*\n`;
+      for (let i = 1; i < p.points.length; i++)
+        gtl += `${gXY(p.points[i].x, p.points[i].y)}D01*\n`;
+      gtl += `${gXY(p.points[0].x, p.points[0].y)}D01*\n`;
+      gtl += 'G37*\n';
+      (p.cutouts||[]).forEach(c => {
+        if (c.points.length < 3) return;
+        gtl += '%LPC*%\n';
+        gtl += 'G36*\n';
+        gtl += `${gXY(c.points[0].x, c.points[0].y)}D02*\n`;
+        for (let i = 1; i < c.points.length; i++)
+          gtl += `${gXY(c.points[i].x, c.points[i].y)}D01*\n`;
+        gtl += `${gXY(c.points[0].x, c.points[0].y)}D01*\n`;
+        gtl += 'G37*\n';
+        gtl += '%LPD*%\n';
+      });
+    });
+    gtl += 'M02*\n';
+
+    // ─── BOARD OUTLINE (.gko) ───
+    let gko = gerberHdr('Board Outline', 'Profile,NP');
+    gko += '%ADD10C,0.100*%\nD10*\n';
+    const olPts = (outline && outline.length >= 3) ? outline : [{x:bx1,y:by1},{x:bx2,y:by1},{x:bx2,y:by2},{x:bx1,y:by2}];
+    gko += `${gXY(olPts[0].x, olPts[0].y)}D02*\n`;
+    for (let i = 1; i < olPts.length; i++)
+      gko += `${gXY(olPts[i].x, olPts[i].y)}D01*\n`;
+    gko += `${gXY(olPts[0].x, olPts[0].y)}D01*\n`;
+    gko += 'M02*\n';
+
+    // ─── SILKSCREEN TOP (.gto) ───
+    let gto = gerberHdr('Silkscreen Top', 'Legend,Top');
+    gto += '%ADD10C,0.200*%\nD10*\n';
+    this.data.components.forEach(c => {
+      if (!c.bounds) return;
+      const b = c.bounds;
+      gto += `${gXY(b.x1, b.y1)}D02*\n`;
+      gto += `${gXY(b.x2, b.y1)}D01*\n`;
+      gto += `${gXY(b.x2, b.y2)}D01*\n`;
+      gto += `${gXY(b.x1, b.y2)}D01*\n`;
+      gto += `${gXY(b.x1, b.y1)}D01*\n`;
+    });
+    gto += 'M02*\n';
+
+    // ─── SOLDERMASK TOP (.gts) ───
+    // Openings over pads/holes for solder
+    let gts = gerberHdr('Soldermask Top', 'Soldermask,Top');
+    let smApIdx = 10;
+    // Pin mask openings (slightly larger than pad)
+    const pinMaskD = (10 * px2mm).toFixed(4);
+    gts += `%ADD${smApIdx}C,${pinMaskD}*%\n`;
+    const pinMaskAp = smApIdx++;
+    const viaMaskD = (14 * px2mm).toFixed(4);
+    gts += `%ADD${smApIdx}C,${viaMaskD}*%\n`;
+    const viaMaskAp = smApIdx++;
+    const holeMaskD = (26 * px2mm).toFixed(4);
+    gts += `%ADD${smApIdx}C,${holeMaskD}*%\n`;
+    const holeMaskAp = smApIdx++;
+    if (pins.length) {
+      gts += `D${pinMaskAp}*\n`;
+      pins.forEach(m => { gts += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (vias.length) {
+      gts += `D${viaMaskAp}*\n`;
+      vias.forEach(m => { gts += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (holes.length) {
+      gts += `D${holeMaskAp}*\n`;
+      holes.forEach(m => { gts += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    gts += 'M02*\n';
+
+    // ─── EXCELLON DRILL FILE (.xln) ───
+    let xln = '; PCB Mapper v5 Drill File\n';
+    xln += 'M48\n';
+    xln += ';METRIC,LZ\n';
+    xln += 'FMAT,2\n';
+    xln += 'METRIC,TZ\n';
+    let tIdx = 1;
+    const drillTools = {};
+    xln += `T${tIdx}C0.800\n`;
+    drillTools['pin'] = tIdx++;
+    const holeSizes = new Map();
+    this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align').forEach(m => {
+      const sz = ((m.holeSize || (m.markerType==='hole'?8:4)) * px2mm).toFixed(3);
+      if (!holeSizes.has(sz)) { holeSizes.set(sz, tIdx); xln += `T${tIdx}C${sz}\n`; tIdx++; }
+    });
+    xln += '%\n';
+    if (pins.length) {
+      xln += `T${drillTools['pin']}\n`;
+      pins.forEach(m => { xln += `X${dX(m.x)}Y${dY(m.y)}\n`; });
+    }
+    const drillGroups = {};
+    this.data.markers.filter(m => m.t !== 'pin' && m.t !== 'align').forEach(m => {
+      const sz = ((m.holeSize || (m.markerType==='hole'?8:4)) * px2mm).toFixed(3);
+      if (!drillGroups[sz]) drillGroups[sz] = [];
+      drillGroups[sz].push(m);
+    });
+    for (const [sz, markers] of Object.entries(drillGroups)) {
+      xln += `T${holeSizes.get(sz)}\n`;
+      markers.forEach(m => { xln += `X${dX(m.x)}Y${dY(m.y)}\n`; });
+    }
+    xln += 'M30\n';
+
+    // ─── PACKAGE & DOWNLOAD ───
+    const zip = new JSZip();
+    zip.file('copper_top.gtl', gtl);
+    zip.file('soldermask_top.gts', gts);
+    zip.file('silkscreen_top.gto', gto);
+    zip.file('board_outline.gko', gko);
+    zip.file('drill.xln', xln);
+    zip.file('README.txt', [
+      'PCB Mapper v5 Gerber Export',
+      `Generated: ${new Date().toISOString()}`,
+      `Scale: 1 pixel = ${px2mm.toFixed(6)} mm`,
+      `Board: ${boardWidthMM.toFixed(1)}mm × ${boardHeightMM.toFixed(1)}mm`,
+      '',
+      'Files (Gerber X2 / RS-274X):',
+      '  copper_top.gtl      Top copper',
+      '  soldermask_top.gts  Top soldermask',
+      '  silkscreen_top.gto  Top silkscreen (legend)',
+      '  board_outline.gko   Board profile/edge cuts',
+      '  drill.xln           Drill file (Excellon)',
+      '',
+      'Compatible with: JLCPCB, PCBWay, OSHPark, tracespace.io,',
+      '                 KiCad, Eagle, Altium, gerbv',
+      '',
+      `Components: ${this.data.components.length}`,
+      `Traces: ${(this.data.traces||[]).length}`,
+      `Drill hits: ${this.data.markers.filter(m=>m.t!=='align').length}`,
+      `Pours: ${(this.data.pours||[]).length}`,
+    ].join('\n'));
+
+    this.status('Generating Gerber...');
+    const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pcb-gerber.zip'; a.click();
+    this.status(`Exported Gerber (${(blob.size/1024).toFixed(0)}KB)`);
+  }
+
+  close3D() {
+    this._3dRunning = false;
+    el('viewer3d').style.display = 'none';
+    if (this._3dResize) window.removeEventListener('resize', this._3dResize);
+    if (this._3dRenderer) {
+      const v = el('viewer3d');
+      if (this._3dRenderer.domElement.parentNode === v) v.removeChild(this._3dRenderer.domElement);
+      this._3dRenderer.dispose();
+      this._3dRenderer = null;
+    }
+  }
+
+  reverseResistor() {
+    const input = el('res-val-input').value.trim().toLowerCase();
+    if (!input) { el('res-reverse').textContent = ''; return; }
+    let val = parseFloat(input.replace(/[kK]/, 'e3').replace(/[mM]/, 'e6').replace(/[rR]/, ''));
+    if (isNaN(val)) { el('res-reverse').textContent = 'Invalid'; return; }
+    const bands = parseInt(el('res-bands').value);
+    const dc = bands === 5 ? 3 : 2;
+    let digits, mulIdx;
+    const ranges2 = [[1e9,9],[1e8,8],[1e7,7],[1e6,6],[1e5,5],[1e4,4],[1e3,3],[100,2],[10,1],[1,0],[0.1,10],[0.01,11]];
+    const ranges3 = [[1e9,7],[1e8,6],[1e7,5],[1e6,4],[1e5,3],[1e4,2],[1e3,1],[100,0],[10,10],[1,11]];
+    const ranges = dc === 2 ? ranges2 : ranges3;
+    for (const [thresh, mi] of ranges) { if (val >= thresh) { digits = Math.round(val / (mi <= 9 ? Math.pow(10, mi + dc - 2) : mi === 10 ? 0.1 : 0.01)); mulIdx = mi; break; } }
+    if (digits === undefined) { digits = Math.round(val * 100); mulIdx = 11; }
+    const dStr = String(digits).padStart(dc, '0');
+    const colors = [];
+    for (let i = 0; i < dc; i++) colors.push(R_DIGIT_NAMES[parseInt(dStr[i])] || 'black');
+    colors.push(R_MUL_NAMES[mulIdx]);
+    el('res-reverse').innerHTML = colors.map(c => `<span style="display:inline-block;width:14px;height:14px;background:${R_COLORS[c].hex};border:1px solid #555;border-radius:2px;vertical-align:middle;margin:0 2px" title="${c}"></span>${c}`).join(' → ');
+  }
+}
+
+const app = new PCBMapper();
+</script>
+</body>
+</html>
