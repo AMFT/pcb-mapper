@@ -2444,8 +2444,8 @@ class PCBMapper {
     const holeRingAp = apIdx++;
     gtl += '\n';
 
-    // Draw traces
-    (this.data.traces||[]).forEach(t => {
+    // Draw traces (top layer only)
+    (this.data.traces||[]).filter(t => (t.layer||'top') === 'top').forEach(t => {
       if (!t.points || t.points.length < 2) return;
       const ap = traceAps[t.width||3];
       gtl += `D${ap}*\n`;
@@ -2475,8 +2475,8 @@ class PCBMapper {
       holes.forEach(m => { gtl += `${gXY(m.x, m.y)}D03*\n`; });
     }
 
-    // Pour regions (G36/G37)
-    (this.data.pours||[]).forEach(p => {
+    // Pour regions (G36/G37) — top only
+    (this.data.pours||[]).filter(p => (p.layer||'top') === 'top').forEach(p => {
       if (!p.points || p.points.length < 3) return;
       gtl += 'G36*\n';
       gtl += `${gXY(p.points[0].x, p.points[0].y)}D02*\n`;
@@ -2497,6 +2497,97 @@ class PCBMapper {
       });
     });
     gtl += 'M02*\n';
+
+    // ─── COPPER BOTTOM (.gbl) ───
+    let gbl = gerberHdr('Copper Bottom', 'Copper,L2,Bot');
+    let bApIdx = 10;
+    const bTraceAps = {};
+    const bTraceWidths = new Set();
+    (this.data.traces||[]).filter(t => t.layer === 'bottom').forEach(t => bTraceWidths.add(t.width||3));
+    for (const w of bTraceWidths) {
+      const d = (w * px2mm).toFixed(4);
+      bTraceAps[w] = bApIdx;
+      gbl += `%ADD${bApIdx}C,${d}*%\n`;
+      bApIdx++;
+    }
+    // Through-hole pads on bottom too
+    gbl += `%ADD${bApIdx}C,${pinPadD}*%\n`;
+    const bPinPadAp = bApIdx++;
+    gbl += `%ADD${bApIdx}C,${viaRingD}*%\n`;
+    const bViaRingAp = bApIdx++;
+    gbl += `%ADD${bApIdx}C,${holeRingD}*%\n`;
+    const bHoleRingAp = bApIdx++;
+    gbl += '\n';
+
+    // Bottom traces
+    (this.data.traces||[]).filter(t => t.layer === 'bottom').forEach(t => {
+      if (!t.points || t.points.length < 2) return;
+      const ap = bTraceAps[t.width||3];
+      gbl += `D${ap}*\n`;
+      gbl += `${gXY(t.points[0].x, t.points[0].y)}D02*\n`;
+      for (let i = 1; i < t.points.length; i++)
+        gbl += `${gXY(t.points[i].x, t.points[i].y)}D01*\n`;
+    });
+
+    // Through-hole pads on bottom
+    if (pins.length) {
+      gbl += `D${bPinPadAp}*\n`;
+      pins.forEach(m => { gbl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (vias.length) {
+      gbl += `D${bViaRingAp}*\n`;
+      vias.forEach(m => { gbl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (holes.length) {
+      gbl += `D${bHoleRingAp}*\n`;
+      holes.forEach(m => { gbl += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+
+    // Bottom pours
+    (this.data.pours||[]).filter(p => p.layer === 'bottom').forEach(p => {
+      if (!p.points || p.points.length < 3) return;
+      gbl += 'G36*\n';
+      gbl += `${gXY(p.points[0].x, p.points[0].y)}D02*\n`;
+      for (let i = 1; i < p.points.length; i++)
+        gbl += `${gXY(p.points[i].x, p.points[i].y)}D01*\n`;
+      gbl += `${gXY(p.points[0].x, p.points[0].y)}D01*\n`;
+      gbl += 'G37*\n';
+      (p.cutouts||[]).forEach(c => {
+        if (c.points.length < 3) return;
+        gbl += '%LPC*%\n';
+        gbl += 'G36*\n';
+        gbl += `${gXY(c.points[0].x, c.points[0].y)}D02*\n`;
+        for (let i = 1; i < c.points.length; i++)
+          gbl += `${gXY(c.points[i].x, c.points[i].y)}D01*\n`;
+        gbl += `${gXY(c.points[0].x, c.points[0].y)}D01*\n`;
+        gbl += 'G37*\n';
+        gbl += '%LPD*%\n';
+      });
+    });
+    gbl += 'M02*\n';
+
+    // ─── SOLDERMASK BOTTOM (.gbs) ───
+    let gbs = gerberHdr('Soldermask Bottom', 'Soldermask,Bot');
+    let smBotIdx = 10;
+    gbs += `%ADD${smBotIdx}C,${(10 * px2mm).toFixed(4)}*%\n`;
+    const bPinMaskAp = smBotIdx++;
+    gbs += `%ADD${smBotIdx}C,${(14 * px2mm).toFixed(4)}*%\n`;
+    const bViaMaskAp = smBotIdx++;
+    gbs += `%ADD${smBotIdx}C,${(26 * px2mm).toFixed(4)}*%\n`;
+    const bHoleMaskAp = smBotIdx++;
+    if (pins.length) {
+      gbs += `D${bPinMaskAp}*\n`;
+      pins.forEach(m => { gbs += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (vias.length) {
+      gbs += `D${bViaMaskAp}*\n`;
+      vias.forEach(m => { gbs += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    if (holes.length) {
+      gbs += `D${bHoleMaskAp}*\n`;
+      holes.forEach(m => { gbs += `${gXY(m.x, m.y)}D03*\n`; });
+    }
+    gbs += 'M02*\n';
 
     // ─── BOARD OUTLINE (.gko) ───
     let gko = gerberHdr('Board Outline', 'Profile,NP');
@@ -2585,7 +2676,9 @@ class PCBMapper {
     // ─── PACKAGE & DOWNLOAD ───
     const zip = new JSZip();
     zip.file('copper_top.gtl', gtl);
+    zip.file('copper_bottom.gbl', gbl);
     zip.file('soldermask_top.gts', gts);
+    zip.file('soldermask_bottom.gbs', gbs);
     zip.file('silkscreen_top.gto', gto);
     zip.file('board_outline.gko', gko);
     zip.file('drill.xln', xln);
@@ -2597,7 +2690,9 @@ class PCBMapper {
       '',
       'Files (Gerber X2 / RS-274X):',
       '  copper_top.gtl      Top copper',
+      '  copper_bottom.gbl   Bottom copper',
       '  soldermask_top.gts  Top soldermask',
+      '  soldermask_bottom.gbs Bottom soldermask',
       '  silkscreen_top.gto  Top silkscreen (legend)',
       '  board_outline.gko   Board profile/edge cuts',
       '  drill.xln           Drill file (Excellon)',
