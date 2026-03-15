@@ -854,7 +854,7 @@ class PCBMapper {
   // ===== MARKERS =====
   addMarker(x, y, d) {
     const id = d?.id || this.genId(), label = d?.label || 'V' + id.replace('o',''), mt = d?.markerType || 'via';
-    const holeSize = d?.holeSize || (mt === 'hole' ? 8 : mt === 'via' ? 4 : 3);
+    const holeSize = d?.holeSize || (mt === 'hole' ? 11 : mt === 'via' ? 6 : 3);
     const c = new fabric.Circle({ left:x, top:y, radius: holeSize, fill:MARKER_COLORS[mt], stroke:'#fff', strokeWidth:1, originX:'center', originY:'center', selectable:this.tool==='select', hasControls:false });
     const layer = d?.layer || this.layer;
     c.pcb = { id, t:'marker', label, markerType:mt, layer, x, y, holeSize };
@@ -1082,7 +1082,7 @@ class PCBMapper {
     if (this.tool === 'trace' && this.drawPts.length >= 2) {
       this.pushUndo();
       const id = this.genId();
-      const traceWidth = this.lastTraceWidth || 3;
+      const traceWidth = this.lastTraceWidth || 9;
       const pl = new fabric.Polyline([...this.drawPts], { stroke:'#44ff88', strokeWidth:traceWidth, fill:'transparent', selectable:this.tool==='select', hasControls:false, strokeLineCap:'round', strokeLineJoin:'round' });
       pl.pcb = { id, t:'trace', points:[...this.drawPts], layer:this.layer, label:'', width:traceWidth };
       this.canvas.add(pl);
@@ -2182,11 +2182,11 @@ class PCBMapper {
       for (let i = 1; i < p.points.length; i++) shape.lineTo(p.points[i].x - cx, p.points[i].y - cy);
       shape.closePath();
       (p.cutouts || []).forEach(c => {
-        if (c.points.length < 3) return;
+        if (!c.points || c.points.length < 3) return;
         const hole = new THREE.Path();
-        const rp = [...c.points].reverse();
-        hole.moveTo(rp[0].x - cx, rp[0].y - cy);
-        for (let i = 1; i < rp.length; i++) hole.lineTo(rp[i].x - cx, rp[i].y - cy);
+        // Use original winding — Three.js auto-detects hole direction
+        hole.moveTo(c.points[0].x - cx, c.points[0].y - cy);
+        for (let i = 1; i < c.points.length; i++) hole.lineTo(c.points[i].x - cx, c.points[i].y - cy);
         hole.closePath();
         shape.holes.push(hole);
       });
@@ -2261,10 +2261,14 @@ class PCBMapper {
       const canvas2d = document.createElement('canvas');
       canvas2d.width = 256; canvas2d.height = 64;
       const ctx = canvas2d.getContext('2d');
+      ctx.save();
+      ctx.translate(256, 0);
+      ctx.scale(-1, 1); // Mirror text so it reads correctly after 3D rotation
       ctx.fillStyle = c.compType === 'ic' ? '#ffffff' : '#000000';
       ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
       ctx.fillText(c.label, 128, 40);
+      ctx.restore();
       const tex = new THREE.CanvasTexture(canvas2d);
       const labelGeo = new THREE.PlaneGeometry(w * 0.8, h * 0.3);
       const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
@@ -2292,9 +2296,15 @@ class PCBMapper {
         orb.panZ + orb.dist * Math.cos(orb.theta) * Math.cos(orb.phi)
       );
       camera.lookAt(orb.panX, 0, orb.panZ);
-      // Update compass
+      // Update compass — mirror the main camera's orientation
       if (compassCam) {
-        compassCam.position.copy(camera.position).sub(new THREE.Vector3(orb.panX, 0, orb.panZ)).normalize().multiplyScalar(4);
+        // Get camera direction relative to the orbit target (ignoring pan)
+        const dir = new THREE.Vector3(
+          Math.sin(orb.theta) * Math.cos(orb.phi),
+          Math.sin(orb.phi),
+          Math.cos(orb.theta) * Math.cos(orb.phi)
+        ).normalize().multiplyScalar(4);
+        compassCam.position.copy(dir);
         compassCam.lookAt(0, 0, 0);
         compassRenderer.render(compassScene, compassCam);
       }
@@ -2361,10 +2371,16 @@ class PCBMapper {
       if (!isDragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       if (isRightDrag || e.shiftKey) {
-        // Pan: move in the camera's local XZ plane
-        const panSpeed = orb.dist * 0.002;
-        orb.panX -= dx * Math.cos(orb.theta) * panSpeed + dy * Math.sin(orb.theta) * panSpeed * 0.5;
-        orb.panZ += dx * Math.sin(orb.theta) * panSpeed - dy * Math.cos(orb.theta) * panSpeed * 0.5;
+        // Pan in screen space — up=up, right=right always
+        const panSpeed = orb.dist * 0.001;
+        // Camera right vector in world space
+        const camRight = new THREE.Vector3();
+        const camUp = new THREE.Vector3();
+        camera.getWorldDirection(new THREE.Vector3());
+        camRight.setFromMatrixColumn(camera.matrixWorld, 0); // right
+        camUp.setFromMatrixColumn(camera.matrixWorld, 1); // up
+        orb.panX -= dx * camRight.x * panSpeed - dy * camUp.x * panSpeed;
+        orb.panZ -= dx * camRight.z * panSpeed - dy * camUp.z * panSpeed;
       } else {
         orb.theta -= dx * 0.005;
         orb.phi = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, orb.phi + dy * 0.005));
