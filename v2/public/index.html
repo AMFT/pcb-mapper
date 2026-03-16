@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB Mapper v2 — Reverse Engineering Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; user-select: none; }
+#app-body { display: flex; flex: 1; overflow: hidden; }
+
+#toolbar { width: 64px; background: #16213e; display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 2px; border-right: 1px solid #0f3460; z-index: 10; overflow-y: auto; }
+.tool-btn { width: 54px; min-height: 46px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: #a0a0c0; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 17px; transition: all 0.12s; position: relative; flex-shrink: 0; gap: 1px; padding: 3px 0; }
+.tool-btn:hover { background: #1a3a6e; color: #fff; }
+.tool-btn.active { background: #0f3460; border-color: #e94560; color: #e94560; }
+.tool-btn .lbl { font-size: 8px; line-height: 1; letter-spacing: 0.3px; opacity: 0.7; }
+.tool-btn.active .lbl { opacity: 1; }
+.tool-btn .tip { display: none; position: absolute; left: 60px; background: #222; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 100; pointer-events: none; }
+.tool-btn:hover .tip { display: block; }
+.tool-sep { width: 36px; height: 1px; background: #0f3460; margin: 2px 0; flex-shrink: 0; }
+
+#canvas-wrap { flex: 1; position: relative; background: #0d1117; overflow: hidden; }
+#board-canvas { position: absolute; top: 0; left: 0; }
+
+#topbar { position: absolute; top: 0; left: 0; right: 0; height: 36px; background: rgba(22,33,62,0.95); display: flex; align-items: center; padding: 0 8px; gap: 6px; z-index: 5; border-bottom: 1px solid #0f3460; font-size: 12px; flex-wrap: nowrap; overflow-x: auto; }
+#topbar select, #topbar button { background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+#topbar button:hover { background: #0f3460; }
+#topbar .spacer { flex: 1; min-width: 2px; }
+#zoom-display { color: #888; font-size: 11px; flex-shrink: 0; }
+
+#pin-banner { display: none; position: absolute; top: 40px; left: 50%; transform: translateX(-50%); background: #e94560; color: #fff; padding: 8px 20px; border-radius: 0 0 8px 8px; font-size: 13px; font-weight: bold; z-index: 6; box-shadow: 0 2px 8px rgba(0,0,0,0.4); white-space: nowrap; }
+#pin-banner .pin-cancel { margin-left: 12px; cursor: pointer; opacity: 0.8; font-size: 11px; text-decoration: underline; }
+
+/* Panel list items */
+.psection ul li { padding: 5px 8px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px; transition: background 0.1s; position: relative; }
+.psection ul li:hover { background: #1a3a6e; }
+.psection ul li .x { display: none; position: absolute; right: 4px; color: #e94560; font-size: 10px; cursor: pointer; padding: 2px 4px; }
+.psection ul li:hover .x { display: block; }
+.psection ul li.highlighted { background: #1a3a6e; border-left: 3px solid #ff0; }
+
+/* Properties panel */
+.prop-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.prop-row label { font-size: 11px; color: #888; min-width: 50px; }
+.prop-row input[type=range] { flex: 1; }
+.prop-val { font-size: 10px; color: #aaa; min-width: 40px; }
+#props label { display: block; font-size: 11px; color: #888; margin-top: 6px; }
+#props input, #props select { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 4px 8px; font-size: 12px; margin-top: 2px; }
+#props input[readonly] { color: #666; }
+
+#panel { width: 280px; background: #16213e; border-left: 1px solid #0f3460; display: flex; flex-direction: column; overflow: hidden; }
+#panel-tabs { display: flex; border-bottom: 1px solid #0f3460; }
+.ptab { flex: 1; padding: 7px 2px; text-align: center; cursor: pointer; font-size: 10px; color: #888; border-bottom: 2px solid transparent; }
+.ptab.active { color: #e94560; border-bottom-color: #e94560; }
+.pcontent { flex: 1; overflow-y: auto; padding: 6px; font-size: 11px; display: none; }
+.pcontent.active { display: block; }
+.pcontent::-webkit-scrollbar { width: 5px; }
+.pcontent::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+.psection { margin-bottom: 10px; }
+.psection h3 { color: #e94560; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+.psection ul { list-style: none; }
+.psection li { padding: 2px 4px; border-radius: 3px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.psection li:hover { background: #1a3a6e; }
+.psection li .x { color: #e94560; cursor: pointer; display: none; font-size: 13px; padding: 0 4px; }
+.psection li:hover .x { display: inline; }
+
+#props { padding: 8px; }
+#props label { display: block; font-size: 10px; color: #888; margin: 5px 0 2px; }
+#props input, #props select, #props textarea { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 3px 6px; font-size: 11px; }
+.prop-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.prop-row label { font-size: 10px; color: #888; min-width: 50px; }
+.prop-row input[type=range] { flex: 1; }
+.prop-row .prop-val { font-size: 10px; color: #aaa; min-width: 30px; text-align: right; }
+
+#statusbar { position: absolute; bottom: 0; left: 0; right: 0; height: 22px; background: rgba(22,33,62,0.95); display: flex; align-items: center; padding: 0 10px; font-size: 10px; color: #666; z-index: 5; border-top: 1px solid #0f3460; gap: 14px; }
+
+/* Context menu */
+#ctx-menu { display: none; position: fixed; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 4px 0; z-index: 100; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+#ctx-menu .ctx-item { padding: 6px 12px; cursor: pointer; font-size: 12px; }
+#ctx-menu .ctx-item:hover { background: #1a3a6e; }
+#ctx-menu .ctx-sep { height: 1px; background: #0f3460; margin: 2px 0; }
+
+/* Modals */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 50; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex !important; }
+.modal { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px; min-width: 280px; }
+.modal h3 { margin-bottom: 10px; color: #e94560; font-size: 14px; }
+.modal label { display: block; font-size: 11px; color: #888; margin: 6px 0 3px; }
+.modal input, .modal select { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+.modal .mbtn { display: flex; gap: 6px; margin-top: 12px; justify-content: flex-end; }
+.modal button { padding: 5px 14px; border-radius: 4px; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; cursor: pointer; font-size: 12px; }
+.modal button.primary { background: #e94560; border-color: #e94560; color: #fff; }
+.dim-row { display: flex; gap: 8px; }
+.dim-row input { flex: 1; }
+.pour-color-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.pour-color-row input[type=color] { width: 36px; height: 28px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; cursor: pointer; }
+.pour-color-row input[type=range] { flex: 1; }
+
+/* Landing */
+#landing { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1a2e; z-index: 300; display: none; flex-direction: column; align-items: center; justify-content: center; }
+#landing h1 { font-size: 32px; color: #e94560; margin-bottom: 4px; letter-spacing: 1px; }
+#landing .subtitle { color: #666; font-size: 13px; margin-bottom: 32px; }
+#landing .actions { display: flex; gap: 16px; margin-bottom: 32px; }
+#landing .actions button { padding: 14px 28px; border-radius: 8px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; font-size: 14px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 140px; }
+#landing .actions button:hover { border-color: #e94560; background: #1a3a6e; }
+#landing .actions button .icon { font-size: 28px; }
+#landing .actions button .label { font-size: 12px; color: #888; }
+#landing .recent { width: 420px; max-width: 90vw; }
+#landing .recent h3 { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+#landing .recent-list { list-style: none; max-height: 280px; overflow-y: auto; }
+#landing .recent-list li { padding: 10px 12px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: all 0.12s; }
+#landing .recent-list li:hover { border-color: #e94560; background: #1a3a6e; }
+#landing .recent-list .board-name { font-size: 13px; font-weight: bold; }
+#landing .recent-list .board-meta { font-size: 10px; color: #666; }
+#landing .recent-list .board-del { color: #e94560; font-size: 16px; opacity: 0; cursor: pointer; padding: 2px 6px; }
+#landing .recent-list li:hover .board-del { opacity: 0.7; }
+
+/* New Board Modal */
+#new-board-modal label { display: block; font-size: 11px; color: #888; margin-top: 8px; }
+#new-board-modal input { width: 100%; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 6px 10px; font-size: 13px; margin-top: 2px; }
+
+/* Tutorial */
+#tutorial-toast { display: none; position: fixed; bottom: 20px; right: 20px; width: 360px; max-height: 80vh; background: #16213e; border: 1px solid #0f3460; border-radius: 10px; z-index: 250; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden; }
+#tutorial-toast .toast-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #0f3460; }
+#tutorial-toast .toast-header h3 { font-size: 14px; color: #e94560; }
+#tutorial-toast .toast-close { background: none; border: none; color: #888; font-size: 18px; cursor: pointer; }
+#tutorial-toast .toast-body { padding: 12px 16px; overflow-y: auto; max-height: 60vh; }
+#tutorial-toast .step { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-start; }
+#tutorial-toast .step-num { background: #e94560; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; flex-shrink: 0; }
+#tutorial-toast .step-text { font-size: 12px; line-height: 1.5; }
+#tutorial-toast .step-text kbd { background: #0f3460; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #e94560; }
+#tutorial-toast .shortcuts { margin-top: 8px; border-top: 1px solid #0f3460; padding-top: 10px; }
+#tutorial-toast .shortcuts h4 { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; }
+#tutorial-toast .sc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; font-size: 11px; }
+#tutorial-toast .sc-grid kbd { background: #0f3460; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #e94560; margin-right: 4px; }
+
+/* Menu Bar */
+#menubar { height: 28px; background: #181825; display: flex; align-items: center; padding: 0 4px; border-bottom: 1px solid #0f3460; z-index: 20; font-size: 12px; flex-shrink: 0; }
+.menu-group { display: flex; gap: 0; }
+.menu-item { position: relative; padding: 4px 10px; cursor: pointer; color: #a0a0c0; border-radius: 3px; }
+.menu-item:hover { background: #1a3a6e; color: #fff; }
+.menu-dropdown { display: none; position: absolute; top: 100%; left: 0; background: #181825; border: 1px solid #0f3460; border-radius: 6px; min-width: 220px; padding: 4px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.6); z-index: 100; }
+.menu-item:hover .menu-dropdown, .menu-item.open .menu-dropdown { display: block; }
+.menu-action { padding: 6px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: #ccc; }
+.menu-action:hover { background: #1a3a6e; color: #fff; }
+.menu-action .shortcut { color: #666; font-size: 10px; margin-left: 24px; }
+.menu-sep { height: 1px; background: #0f3460; margin: 2px 6px; }
+.menu-spacer { flex: 1; }
+#menu-board-name { color: #888; font-size: 11px; padding: 2px 8px; border: 1px solid transparent; border-radius: 3px; outline: none; max-width: 250px; white-space: nowrap; overflow: hidden; }
+#menu-board-name:focus { border-color: #0f3460; color: #ccc; background: #1a1a2e; }
+
+/* Auto-save badge */
+#autosave-badge { position: fixed; bottom: 6px; left: 72px; font-size: 10px; color: #444; z-index: 5; transition: color 0.3s; }
+#autosave-badge.saving { color: #e94560; }
+#autosave-badge.saved { color: #44cc44; }
+
+/* 3D Viewer */
+#viewer3d { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 200; }
+#viewer3d canvas { width: 100% !important; height: 100% !important; }
+#v3d-close { position: fixed; top: 12px; right: 16px; z-index: 201; background: #e94560; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+#v3d-views { position: fixed; top: 12px; left: 16px; z-index: 201; display: flex; gap: 6px; }
+#v3d-views button { background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="menu-group">
+    <div class="menu-item" data-menu="file">File
+      <div class="menu-dropdown" id="menu-file">
+        <div class="menu-action" data-action="new">New Board <span class="shortcut">Ctrl+N</span></div>
+        <div class="menu-action" data-action="open">Open… <span class="shortcut">Ctrl+O</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="save">Save <span class="shortcut">Ctrl+S</span></div>
+        <div class="menu-action" data-action="saveas">Save As JSON</div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="import-top">Import Top Image <span class="shortcut">Ctrl+I</span></div>
+        <div class="menu-action" data-action="import-bot">Import Bottom Image</div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="home">Back to Home</div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="edit">Edit
+      <div class="menu-dropdown" id="menu-edit">
+        <div class="menu-action" data-action="undo">Undo <span class="shortcut">Ctrl+Z</span></div>
+        <div class="menu-action" data-action="redo">Redo <span class="shortcut">Ctrl+Y</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="delete">Delete Selected <span class="shortcut">Del</span></div>
+        <div class="menu-action" data-action="selectall">Select All <span class="shortcut">Ctrl+A</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="view">View
+      <div class="menu-dropdown" id="menu-view">
+        <div class="menu-action" data-action="zoomin">Zoom In <span class="shortcut">Ctrl+=</span></div>
+        <div class="menu-action" data-action="zoomout">Zoom Out <span class="shortcut">Ctrl+-</span></div>
+        <div class="menu-action" data-action="zoomfit">Zoom to Fit <span class="shortcut">Ctrl+0</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="grid">Toggle Grid <span class="shortcut">G</span></div>
+        <div class="menu-action" data-action="snap">Toggle Snap</div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="3d">3D View <span class="shortcut">Ctrl+3</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="export">Export
+      <div class="menu-dropdown" id="menu-export">
+        <div class="menu-action" data-action="gerber" style="color:#44cc44;font-weight:bold">⚡ Export Gerber (JLCPCB)</div>
+        <div class="menu-action" data-action="bom">Export BOM (CSV)</div>
+        <div class="menu-action" data-action="json">Export JSON</div>
+        <div class="menu-action" data-action="md">Export Markdown</div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="help">Help
+      <div class="menu-dropdown" id="menu-help">
+        <div class="menu-action" data-action="tutorial">Tutorial</div>
+        <div class="menu-action" data-action="shortcuts">Keyboard Shortcuts</div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="about">About PCB Mapper v2</div>
+      </div>
+    </div>
+  </div>
+  <div class="menu-spacer"></div>
+  <div id="menu-board-name" contenteditable="true" spellcheck="false"></div>
+</div>
+
+<div id="app-body">
+<div id="toolbar">
+  <button class="tool-btn active" data-tool="select"><span>⊹</span><span class="lbl">SELECT</span><span class="tip">Select (V)</span></button>
+  <button class="tool-btn" data-tool="pan"><span>✋</span><span class="lbl">PAN</span><span class="tip">Pan (H)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="marker"><span>⊙</span><span class="lbl">MARKER</span><span class="tip">Marker (M)</span></button>
+  <button class="tool-btn" data-tool="component"><span>▣</span><span class="lbl">COMP</span><span class="tip">Component (C)</span></button>
+  <button class="tool-btn" data-tool="smd"><span>▪</span><span class="lbl">PAD</span><span class="tip">SMD Pad (D)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="net"><span>⟋</span><span class="lbl">NET</span><span class="tip">Net (N)</span></button>
+  <button class="tool-btn" data-tool="trace"><span>╱</span><span class="lbl">TRACE</span><span class="tip">Trace (T)</span></button>
+  <button class="tool-btn" data-tool="pour"><span>⬡</span><span class="lbl">POUR</span><span class="tip">Pour (P)</span></button>
+  <button class="tool-btn" data-tool="punchout"><span>⊘</span><span class="lbl">PUNCH</span><span class="tip">Punchout (X)</span></button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="outline"><span>▢</span><span class="lbl">EDGE</span><span class="tip">Outline (O)</span></button>
+  <button class="tool-btn" data-tool="align"><span>⊞</span><span class="lbl">ALIGN</span><span class="tip">Align Point (A)</span></button>
+  <button class="tool-btn" data-tool="measure"><span>📏</span><span class="lbl">MEAS</span><span class="tip">Measure (U)</span></button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="topbar">
+    <button onclick="window.goHome?.()">← Home</button>
+    <button onclick="document.getElementById('img-top').click()">📷 Top</button>
+    <button onclick="document.getElementById('img-bot').click()">📷 Bottom</button>
+    <input type="file" id="img-top" accept="image/*" style="display:none">
+    <input type="file" id="img-bot" accept="image/*" style="display:none">
+    <select id="layer-select"><option value="top">Top</option><option value="bottom">Bottom</option><option value="both">Both</option></select>
+    <button onclick="window.doFlipBottom?.()">🔄 Flip</button>
+    <button onclick="window.doApplyAlign?.()">📐 Align</button>
+    <span class="spacer"></span>
+    <button id="btn-grid" onclick="window.doToggleGrid?.()">⊞ Grid</button>
+    <button id="btn-snap" onclick="window.doToggleSnap?.()">🔲 Snap</button>
+    <span class="spacer"></span>
+    <button onclick="window.doUndo?.()">↩ Undo</button>
+    <button onclick="window.doRedo?.()">↪ Redo</button>
+    <span class="spacer"></span>
+    <button onclick="window.doSave?.()">💾 Save</button>
+    <button onclick="document.getElementById('load-f').click()">📂 Load</button>
+    <input type="file" id="load-f" accept=".json,.zip,.pcbm" style="display:none">
+    <button onclick="window.doExportMD?.()">📋 MD</button>
+    <button onclick="window.doExportGerber?.()" style="background:#1a3a1a;color:#44cc44;font-weight:bold">⚡ Gerber</button>
+    <button onclick="window.doOpen3D?.()" style="background:#0f3460;color:#4488ff;font-weight:bold">🧊 3D</button>
+    <button id="btn-detect" onclick="window.doDetectTraces?.()" style="background:#3a1a3a;color:#cc44cc;font-weight:bold" title="Analyze board image for copper traces">🔍 Detect</button>
+    <span id="zoom-display">100%</span>
+  </div>
+
+  <div id="marker-type-bar" style="display:none;position:absolute;top:40px;left:50%;transform:translateX(-50%);background:#16213e;border:1px solid #0f3460;border-radius:0 0 8px 8px;padding:4px 12px;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,0.4);gap:4px;align-items:center;">
+    <span style="font-size:11px;color:#888;margin-right:6px">Marker Type:</span>
+    <button class="marker-type-btn active" data-mtype="via" style="padding:4px 10px;border-radius:4px;border:1px solid #0f3460;background:#1a1a2e;color:#ffaa00;cursor:pointer;font-size:11px;font-weight:bold;">⊙ Via</button>
+    <button class="marker-type-btn" data-mtype="hole" style="padding:4px 10px;border-radius:4px;border:1px solid #0f3460;background:#1a1a2e;color:#ff6600;cursor:pointer;font-size:11px;font-weight:bold;">⊚ Through-Hole</button>
+    <button class="marker-type-btn" data-mtype="testpoint" style="padding:4px 10px;border-radius:4px;border:1px solid #0f3460;background:#1a1a2e;color:#00ccaa;cursor:pointer;font-size:11px;font-weight:bold;">◎ Test Point</button>
+  </div>
+  <div id="pin-banner">
+    <span id="pin-banner-text">Place pin 1</span>
+    <span class="pin-cancel" onclick="window.cancelPinPlace?.()">cancel</span>
+  </div>
+
+  <canvas id="board-canvas"></canvas>
+
+  <div id="statusbar">
+    <span id="st-tool">Select</span>
+    <span id="st-pos">0, 0</span>
+    <span id="st-info">Ready</span>
+  </div>
+</div>
+
+<div id="panel">
+  <div id="panel-tabs">
+    <div class="ptab active" data-tab="comps">Parts</div>
+    <div class="ptab" data-tab="nets">Nets</div>
+    <div class="ptab" data-tab="props">Props</div>
+    <div class="ptab" data-tab="resistor">Ω</div>
+    <div class="ptab" data-tab="drc">DRC</div>
+    <div class="ptab" data-tab="suggest">AI</div>
+  </div>
+  <div class="pcontent active" id="tab-comps">
+    <div class="psection"><h3>Components</h3><ul id="cl-comp"></ul></div>
+    <div class="psection"><h3>Markers</h3><ul id="cl-mark"></ul></div>
+  </div>
+  <div class="pcontent" id="tab-nets">
+    <div class="psection"><h3>Connections</h3><ul id="cl-net"></ul></div>
+    <div class="psection"><h3>Pours</h3><ul id="cl-pour"></ul></div>
+    <div class="psection"><h3>Traces</h3><ul id="cl-trace"></ul></div>
+  </div>
+  <div class="pcontent" id="tab-props">
+    <div id="props"><p style="color:#666">Select an element</p></div>
+  </div>
+  <div class="pcontent" id="tab-resistor">
+    <!-- Decoder UI injected by decoders.js -->
+  </div>
+  <div class="pcontent" id="tab-suggest">
+    <div style="padding: 8px;">
+      <button id="btn-analyze" style="width:100%;padding:8px;background:#3a1a3a;color:#cc44cc;border:1px solid #0f3460;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">🔍 Analyze Board Image</button>
+      <div style="margin-top:6px;display:flex;gap:4px">
+        <label style="font-size:10px;color:#888;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="chk-heatmap"> Show copper heatmap
+        </label>
+      </div>
+      <div style="margin-top:4px;font-size:10px;color:#666">
+        Threshold: <input type="range" id="detect-threshold" min="10" max="50" value="25" style="width:80px;vertical-align:middle"> <span id="detect-thresh-val">0.25</span>
+      </div>
+      <div id="suggest-results" style="margin-top:8px;font-size:11px;max-height:400px;overflow-y:auto"></div>
+      <div id="suggest-actions" style="display:none;margin-top:8px;display:flex;gap:4px">
+        <button id="btn-accept-all" style="flex:1;padding:6px;background:#1a3a1a;color:#44cc44;border:1px solid #0f3460;border-radius:4px;cursor:pointer;font-size:11px">✓ Accept All</button>
+        <button id="btn-reject-all" style="flex:1;padding:6px;background:#3a1a1a;color:#cc4444;border:1px solid #0f3460;border-radius:4px;cursor:pointer;font-size:11px">✕ Clear All</button>
+      </div>
+    </div>
+  </div>
+  <div class="pcontent" id="tab-drc">
+    <div style="padding: 8px;">
+      <button id="btn-run-drc" style="width:100%;padding:8px;background:#1a3a6e;color:#89b4fa;border:1px solid #0f3460;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">⚡ Run Design Rule Check</button>
+      <div id="drc-results" style="margin-top:8px;font-size:11px;"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-body -->
+<div id="ctx-menu"></div>
+<div id="autosave-badge">●</div>
+
+<!-- Landing Page -->
+<div id="landing">
+  <h1>⊹ PCB Mapper</h1>
+  <div class="subtitle">v2 — Reverse Engineering Tool</div>
+  <div class="actions">
+    <button id="btn-new-board">
+      <span class="icon">＋</span>
+      New Board
+      <span class="label">Start a new project</span>
+    </button>
+    <button id="btn-open-file">
+      <span class="icon">📂</span>
+      Open File
+      <span class="label">.pcbm, .json, image</span>
+    </button>
+    <input type="file" id="file-load-landing" accept=".json,.zip,.pcbm,image/*" style="display:none">
+  </div>
+  <div class="recent">
+    <h3>Recent Boards</h3>
+    <ul class="recent-list" id="recent-list"></ul>
+  </div>
+</div>
+
+<!-- New Board Modal -->
+<div class="modal-overlay" id="new-board-modal" style="display:none">
+  <div class="modal">
+    <h3>New Board</h3>
+    <label>Board Name</label>
+    <input id="nb-name" placeholder="e.g. VMM3 Controller">
+    <label>Width (mm)</label>
+    <div class="dim-row">
+      <input id="nb-width" type="number" placeholder="Width" min="1" max="999" step="0.1">
+      <input id="nb-height" type="number" placeholder="Height" min="1" max="999" step="0.1">
+    </div>
+    <label style="color:#555;font-size:10px;margin-top:2px">Used for Gerber export scaling. Measure your board with a ruler.</label>
+    <div class="mbtn">
+      <button onclick="window.cancelNewBoard?.()">Cancel</button>
+      <button class="primary" onclick="window.confirmNewBoard?.()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Component Modal -->
+<div class="modal-overlay" id="comp-modal" style="display:none">
+  <div class="modal">
+    <h3>Add Component</h3>
+    <label>Label</label><input id="cm-label" placeholder="IC2, C22, R13">
+    <label>Type</label>
+    <select id="cm-type">
+      <option value="ic">IC</option><option value="cap">Capacitor</option>
+      <option value="res">Resistor</option><option value="diode">Diode</option>
+      <option value="transistor">Transistor</option><option value="inductor">Inductor</option>
+      <option value="connector">Connector</option><option value="other">Other</option>
+    </select>
+    <label>Pin Count</label><input id="cm-pins" type="number" value="8" min="1" max="200">
+    <label>Value / Notes</label><input id="cm-val" placeholder="100µF, FA8849M">
+    <div class="mbtn">
+      <button onclick="window.cancelComp?.()">Cancel</button>
+      <button class="primary" onclick="window.confirmComp?.()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pour Modal -->
+<div class="modal-overlay" id="pour-modal" style="display:none">
+  <div class="modal">
+    <h3>Pour / Fill Zone</h3>
+    <label>Label</label><input id="pm-label" placeholder="GND, +5V">
+    <label>Net Type</label>
+    <select id="pm-type" onchange="window.pourTypeChanged?.()">
+      <option value="ground">Ground</option><option value="power">Power</option>
+      <option value="signal">Signal</option><option value="other">Other</option>
+    </select>
+    <label>Color &amp; Opacity</label>
+    <div class="pour-color-row">
+      <input type="color" id="pm-color" value="#888888">
+      <input type="range" id="pm-opacity" min="5" max="60" value="25">
+      <span id="pm-opval" style="font-size:10px;color:#888">25%</span>
+    </div>
+    <div class="mbtn">
+      <button onclick="window.cancelPour?.()">Cancel</button>
+      <button class="primary" onclick="window.confirmPour?.()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tutorial Toast -->
+<div id="tutorial-toast">
+  <div class="toast-header">
+    <h3>🐾 Getting Started</h3>
+    <button class="toast-close" onclick="window.closeTutorial?.()">✕</button>
+  </div>
+  <div class="toast-body">
+    <div class="step"><div class="step-num">1</div><div class="step-text">Load board photos using <strong>📷 Top</strong> / <strong>📷 Bottom</strong></div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">Place <strong>alignment points</strong> (<kbd>A</kbd>) on both sides, hit <strong>📐 Align</strong></div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">Draw the <strong>board outline</strong> (<kbd>O</kbd>) — click corners, <kbd>Enter</kbd> to close</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">Add <strong>components</strong> (<kbd>C</kbd>) — drag outline, then click to place each pin</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-text">Place <strong>markers</strong> (<kbd>M</kbd>) for vias/through-holes</div></div>
+    <div class="step"><div class="step-num">6</div><div class="step-text">Draw <strong>traces</strong> (<kbd>T</kbd>) — angle snaps to 45°, snaps to pads</div></div>
+    <div class="step"><div class="step-num">7</div><div class="step-text">Add <strong>pours</strong> (<kbd>P</kbd>), use <strong>punchout</strong> (<kbd>X</kbd>) for clearances</div></div>
+    <div class="step"><div class="step-num">8</div><div class="step-text">Measure distances with <strong>📏 Measure</strong> (<kbd>U</kbd>)</div></div>
+    <div class="step"><div class="step-num">9</div><div class="step-text">Export <strong>⚡ Gerber</strong> or view in <strong>🧊 3D</strong></div></div>
+    <div class="shortcuts">
+      <h4>Shortcuts</h4>
+      <div class="sc-grid">
+        <div><kbd>V</kbd> Select</div><div><kbd>H</kbd> Pan</div>
+        <div><kbd>M</kbd> Marker</div><div><kbd>C</kbd> Component</div>
+        <div><kbd>D</kbd> Pad</div><div><kbd>T</kbd> Trace</div>
+        <div><kbd>N</kbd> Net</div><div><kbd>O</kbd> Outline</div>
+        <div><kbd>A</kbd> Align</div><div><kbd>U</kbd> Measure</div>
+        <div><kbd>P</kbd> Pour</div><div><kbd>X</kbd> Punchout</div>
+        <div><kbd>Enter</kbd> Finish</div><div><kbd>Del</kbd> Delete</div>
+        <div><kbd>Ctrl+Z</kbd> Undo</div><div><kbd>Ctrl+C/V</kbd> Copy/Paste</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- About Modal -->
+<div class="modal-overlay" id="about-modal" style="display:none">
+  <div class="modal" style="max-width:400px;text-align:center">
+    <h2 style="color:#f38ba8;margin:0">PCB Mapper</h2>
+    <p style="color:#666;font-size:12px;margin:4px 0 16px">v2.0 — Reverse Engineering Tool</p>
+    <div style="font-size:12px;color:#aaa;line-height:1.8">
+      <p>Built for reverse engineering PCBs from photos. Place components, trace connections, export JLCPCB-ready Gerbers.</p>
+      <hr style="border-color:#0f3460;margin:12px 0">
+      <p style="font-size:11px;color:#666">
+        <strong>Stack:</strong> Fabric.js · Three.js · Express · ES Modules<br>
+        <strong>Export:</strong> Gerber X2 + Excellon + PnP + BOM<br>
+        <strong>Built by:</strong> Scout 🐾 for Aaron
+      </p>
+    </div>
+    <div class="mbtn" style="margin-top:16px;justify-content:center">
+      <button class="primary" onclick="document.getElementById('about-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Shortcuts Modal -->
+<div class="modal-overlay" id="shortcuts-modal" style="display:none">
+  <div class="modal" style="max-width:500px">
+    <h3>⌨️ Keyboard Shortcuts</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;font-size:12px">
+      <div style="padding:4px"><kbd>V</kbd> Select</div><div style="padding:4px"><kbd>H</kbd> Pan</div>
+      <div style="padding:4px"><kbd>M</kbd> Marker</div><div style="padding:4px"><kbd>C</kbd> Component</div>
+      <div style="padding:4px"><kbd>D</kbd> SMD Pad</div><div style="padding:4px"><kbd>N</kbd> Net</div>
+      <div style="padding:4px"><kbd>T</kbd> Trace</div><div style="padding:4px"><kbd>P</kbd> Pour</div>
+      <div style="padding:4px"><kbd>X</kbd> Punchout</div><div style="padding:4px"><kbd>O</kbd> Outline</div>
+      <div style="padding:4px"><kbd>A</kbd> Align</div><div style="padding:4px"><kbd>U</kbd> Measure</div>
+      <div style="padding:4px"><kbd>G</kbd> Toggle Grid</div><div style="padding:4px"><kbd>Enter</kbd> Finish Drawing</div>
+      <div style="padding:4px"><kbd>Del</kbd> Delete Selected</div><div style="padding:4px"><kbd>Esc</kbd> Cancel/Close</div>
+      <div style="padding:4px;grid-column:span 2;border-top:1px solid #0f3460;margin-top:4px;padding-top:8px;font-weight:bold;color:#89b4fa">Ctrl/Cmd Shortcuts</div>
+      <div style="padding:4px"><kbd>Ctrl+N</kbd> New Board</div><div style="padding:4px"><kbd>Ctrl+O</kbd> Open File</div>
+      <div style="padding:4px"><kbd>Ctrl+S</kbd> Save</div><div style="padding:4px"><kbd>Ctrl+Z</kbd> Undo</div>
+      <div style="padding:4px"><kbd>Ctrl+Y</kbd> Redo</div><div style="padding:4px"><kbd>Ctrl+A</kbd> Select All</div>
+      <div style="padding:4px"><kbd>Ctrl+3</kbd> 3D View</div><div style="padding:4px"><kbd>Ctrl+I</kbd> Import Image</div>
+      <div style="padding:4px"><kbd>Ctrl+F</kbd> Flip Board</div><div style="padding:4px"><kbd>Ctrl+0</kbd> Zoom to Fit</div>
+      <div style="padding:4px"><kbd>Ctrl+=</kbd> Zoom In</div><div style="padding:4px"><kbd>Ctrl+-</kbd> Zoom Out</div>
+    </div>
+    <div class="mbtn" style="margin-top:12px;justify-content:center">
+      <button class="primary" onclick="document.getElementById('shortcuts-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gerber Preview -->
+<div id="gerber-preview" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#0a0a1a;z-index:400;flex-direction:column">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:#181825;border-bottom:1px solid #0f3460">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h3 style="margin:0;font-size:14px;color:#b87333">⚡ Gerber Preview</h3>
+      <span style="color:#666;font-size:11px">Preview layers before exporting to JLCPCB</span>
+    </div>
+    <button id="gp-close" style="background:#e94560;color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">✕ Close</button>
+  </div>
+  <div style="display:flex;flex:1;overflow:hidden">
+    <div id="gp-canvas" style="flex:1;overflow:hidden"></div>
+    <div style="width:180px;background:#16213e;border-left:1px solid #0f3460;padding:8px;overflow-y:auto">
+      <h4 style="margin:0 0 8px;font-size:12px;color:#89b4fa">Layers</h4>
+      <div id="gp-layers"></div>
+      <div style="margin-top:12px;border-top:1px solid #0f3460;padding-top:8px">
+        <button id="gp-export" style="width:100%;padding:8px;background:#44cc44;color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px">⬇ Export Gerber ZIP</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3D Viewer -->
+<div id="viewer3d">
+  <button id="v3d-close" onclick="window.close3D?.()">✕ Close</button>
+  <div id="v3d-views">
+    <button onclick="window.set3DView?.('top')">⬆ Top</button>
+    <button onclick="window.set3DView?.('bottom')">⬇ Bottom</button>
+    <button onclick="window.set3DView?.('front')">◻ Front</button>
+    <button onclick="window.set3DView?.('iso')">◇ Iso</button>
+  </div>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

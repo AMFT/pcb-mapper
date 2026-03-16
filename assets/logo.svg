@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- PCB Board -->
+  <rect x="56" y="56" width="400" height="400" rx="24" fill="#1a1a2e" stroke="#0f3460" stroke-width="8"/>
+  
+  <!-- Copper traces -->
+  <path d="M128 256 L200 256 L240 200 L340 200" stroke="#b87333" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 312 L200 312 L240 356 L340 356" stroke="#b87333" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M240 200 L240 356" stroke="#b87333" stroke-width="8" stroke-linecap="round" stroke-dasharray="4 8"/>
+  
+  <!-- IC chip body -->
+  <rect x="300" y="170" width="100" height="216" rx="8" fill="#1a1a1a" stroke="#333" stroke-width="4"/>
+  <!-- IC pin-1 dot -->
+  <circle cx="320" cy="195" r="6" fill="#666"/>
+  <!-- IC pins left -->
+  <rect x="288" y="196" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="220" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="244" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="268" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="292" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="316" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="340" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="288" y="364" width="16" height="6" rx="1" fill="#ccc"/>
+  <!-- IC pins right -->
+  <rect x="396" y="196" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="220" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="244" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="268" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="292" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="316" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="340" width="16" height="6" rx="1" fill="#ccc"/>
+  <rect x="396" y="364" width="16" height="6" rx="1" fill="#ccc"/>
+  
+  <!-- Vias -->
+  <circle cx="128" cy="256" r="14" fill="#ffaa00" stroke="#fff" stroke-width="3"/>
+  <circle cx="128" cy="256" r="5" fill="#1a1a2e"/>
+  <circle cx="128" cy="312" r="14" fill="#ffaa00" stroke="#fff" stroke-width="3"/>
+  <circle cx="128" cy="312" r="5" fill="#1a1a2e"/>
+  
+  <!-- Through holes -->
+  <circle cx="128" cy="160" r="10" fill="#ff6600" stroke="#fff" stroke-width="2"/>
+  <circle cx="128" cy="160" r="4" fill="#1a1a2e"/>
+  <circle cx="128" cy="396" r="10" fill="#ff6600" stroke="#fff" stroke-width="2"/>
+  <circle cx="128" cy="396" r="4" fill="#1a1a2e"/>
+  
+  <!-- SMD pads -->
+  <rect x="170" y="130" width="24" height="14" rx="2" fill="#00ccaa"/>
+  <rect x="170" y="406" width="24" height="14" rx="2" fill="#00ccaa"/>
+  
+  <!-- Crosshair / target overlay -->
+  <circle cx="256" cy="278" r="48" fill="none" stroke="#e94560" stroke-width="3" stroke-dasharray="8 6" opacity="0.8"/>
+  <line x1="256" y1="222" x2="256" y2="238" stroke="#e94560" stroke-width="3" opacity="0.8"/>
+  <line x1="256" y1="318" x2="256" y2="334" stroke="#e94560" stroke-width="3" opacity="0.8"/>
+  <line x1="200" y1="278" x2="216" y2="278" stroke="#e94560" stroke-width="3" opacity="0.8"/>
+  <line x1="296" y1="278" x2="312" y2="278" stroke="#e94560" stroke-width="3" opacity="0.8"/>
+  
+  <!-- Solder mask green tint on board edge -->
+  <rect x="56" y="56" width="400" height="400" rx="24" fill="none" stroke="#22aa44" stroke-width="2" opacity="0.3"/>
+</svg>
